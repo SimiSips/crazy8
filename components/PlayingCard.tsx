@@ -2,46 +2,101 @@
 import { motion } from 'framer-motion';
 import type { Card } from '@/lib/types';
 
-export const COLOR_BG: Record<string, string> = {
-  red: 'bg-red-500',
-  green: 'bg-green-500',
-  blue: 'bg-blue-500',
-  yellow: 'bg-yellow-400',
+// ─── Color maps ────────────────────────────────────────────────────────────────
+export const CARD_BG: Record<string, string> = {
+  red: '#e53e3e',
+  green: '#38a169',
+  blue: '#3182ce',
+  yellow: '#d69e2e',
 };
 
-export const COLOR_DARK: Record<string, string> = {
-  red: 'bg-red-700',
-  green: 'bg-green-700',
-  blue: 'bg-blue-700',
-  yellow: 'bg-yellow-600',
+const CARD_SHADOW: Record<string, string> = {
+  red: '0 0 20px rgba(229,62,62,0.7)',
+  green: '0 0 20px rgba(56,161,105,0.7)',
+  blue: '0 0 20px rgba(49,130,206,0.7)',
+  yellow: '0 0 20px rgba(214,158,46,0.7)',
 };
 
-export const COLOR_BORDER: Record<string, string> = {
-  red: 'border-red-300',
-  green: 'border-green-300',
-  blue: 'border-blue-300',
-  yellow: 'border-yellow-300',
-};
-
-export const COLOR_GLOW: Record<string, string> = {
-  red: 'shadow-red-400/60',
-  green: 'shadow-green-400/60',
-  blue: 'shadow-blue-400/60',
-  yellow: 'shadow-yellow-300/60',
-};
-
-const TYPE_SYMBOL: Record<string, string> = {
+const TYPE_CENTER: Record<string, string> = {
   skip: '⊘',
   reverse: '↺',
   draw2: '+2',
   wild8: '8',
 };
 
-function cardLabel(card: Card): string {
+function cardCenter(card: Card): string {
   if (card.type === 'number') return String(card.value);
-  return TYPE_SYMBOL[card.type] ?? '?';
+  return TYPE_CENTER[card.type] ?? '?';
 }
 
+// ─── Stacked face-down fan ─────────────────────────────────────────────────────
+interface CardFanProps {
+  count: number;
+  direction?: 'horizontal' | 'vertical';
+}
+
+export function CardFan({ count, direction = 'horizontal' }: CardFanProps) {
+  const show = Math.min(count, 9);
+  const W = 46;
+  const H = 66;
+  const offset = direction === 'horizontal' ? 13 : 10;
+  const totalW = direction === 'horizontal' ? W + (show - 1) * offset : W;
+  const totalH = direction === 'vertical' ? H + (show - 1) * offset : H;
+
+  return (
+    <div style={{ position: 'relative', width: totalW, height: totalH, flexShrink: 0 }}>
+      {Array.from({ length: show }).map((_, i) => {
+        const style: React.CSSProperties =
+          direction === 'horizontal'
+            ? { position: 'absolute', left: i * offset, top: 0, zIndex: i }
+            : { position: 'absolute', top: i * offset, left: 0, zIndex: i };
+        return (
+          <div key={i} style={style}>
+            <FaceDownCard />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Face-down card ────────────────────────────────────────────────────────────
+export function FaceDownCard() {
+  return (
+    <div
+      style={{
+        width: 46,
+        height: 66,
+        borderRadius: 8,
+        background: 'linear-gradient(145deg, #1a1a2e 0%, #0f0f1a 100%)',
+        border: '2px solid rgba(255,255,255,0.25)',
+        boxShadow: '2px 2px 6px rgba(0,0,0,0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+      }}
+    >
+      <div
+        style={{
+          inset: 4,
+          position: 'absolute',
+          borderRadius: 5,
+          border: '1.5px solid rgba(255,255,255,0.15)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 8, fontWeight: 900, letterSpacing: 0.5 }}>
+          CRAZY 8
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Playing card (face-up) ────────────────────────────────────────────────────
 interface PlayingCardProps {
   card: Card;
   playable?: boolean;
@@ -52,91 +107,79 @@ interface PlayingCardProps {
 
 export function PlayingCard({ card, playable, selected, onClick, size = 'md' }: PlayingCardProps) {
   const isWild = card.type === 'wild8';
-  const label = cardLabel(card);
-  const sm = size === 'sm';
+  const label = cardCenter(card);
+  const bg = isWild
+    ? 'linear-gradient(135deg,#e53e3e 0%,#d69e2e 33%,#38a169 66%,#3182ce 100%)'
+    : `linear-gradient(160deg, ${CARD_BG[card.color ?? 'red']}dd 0%, ${CARD_BG[card.color ?? 'red']} 100%)`;
 
-  const bgClass = isWild
-    ? '' // gradient applied inline
-    : card.color
-    ? COLOR_BG[card.color]
-    : 'bg-gray-800';
-
-  const glowClass = isWild ? 'shadow-purple-400/60' : card.color ? COLOR_GLOW[card.color] : '';
+  const W = size === 'md' ? 72 : 50;
+  const H = size === 'md' ? 104 : 72;
+  const centerSize = size === 'md' ? (card.type === 'number' ? 40 : 28) : (card.type === 'number' ? 26 : 18);
+  const cornerSize = size === 'md' ? 11 : 9;
+  const shadow = !isWild && card.color ? CARD_SHADOW[card.color] : '0 0 20px rgba(168,85,247,0.7)';
 
   return (
     <motion.div
-      whileHover={playable ? { y: -16, scale: 1.06 } : {}}
-      whileTap={playable ? { scale: 0.94 } : {}}
-      animate={{ y: selected ? -20 : 0 }}
-      transition={{ type: 'spring', stiffness: 420, damping: 26 }}
+      whileHover={playable ? { y: -18, scale: 1.06 } : {}}
+      whileTap={playable ? { scale: 0.93 } : {}}
+      animate={{ y: selected ? -22 : 0, scale: selected ? 1.04 : 1 }}
+      transition={{ type: 'spring', stiffness: 450, damping: 28 }}
       onClick={playable ? onClick : undefined}
-      className={[
-        'relative rounded-2xl flex-shrink-0 overflow-hidden border-4',
-        sm ? 'w-[46px] h-[64px]' : 'w-[72px] h-[100px]',
-        bgClass,
-        playable
-          ? `cursor-pointer border-white shadow-xl ${glowClass}`
-          : 'border-white/30 cursor-default',
-        !playable && !selected ? 'opacity-50 saturate-50' : '',
-        selected ? `border-white shadow-2xl ${glowClass} ring-4 ring-white/40` : '',
-      ].join(' ')}
-      style={
-        isWild
-          ? { background: 'linear-gradient(135deg, #ef4444 0%, #f59e0b 25%, #22c55e 50%, #3b82f6 75%, #a855f7 100%)' }
-          : undefined
-      }
+      style={{
+        width: W,
+        height: H,
+        borderRadius: 10,
+        background: bg,
+        border: playable || selected ? '2.5px solid #fff' : '2px solid rgba(255,255,255,0.35)',
+        boxShadow: playable || selected ? shadow : '1px 2px 6px rgba(0,0,0,0.4)',
+        position: 'relative',
+        cursor: playable ? 'pointer' : 'default',
+        flexShrink: 0,
+        opacity: !playable && !selected ? 0.55 : 1,
+        filter: !playable && !selected ? 'saturate(0.6)' : 'none',
+      }}
     >
-      {/* Inner oval */}
+      {/* Inner frame */}
       <div
-        className={`absolute inset-[6px] rounded-xl flex items-center justify-center
-          ${isWild ? 'bg-black/30' : 'bg-black/20'}
-        `}
-      >
-        <span
-          className={[
-            'font-black text-white drop-shadow',
-            sm ? 'text-base' : card.type === 'number' ? 'text-3xl' : 'text-xl',
-          ].join(' ')}
-        >
-          {label}
-        </span>
+        style={{
+          position: 'absolute',
+          inset: 4,
+          borderRadius: 7,
+          border: '1.5px solid rgba(255,255,255,0.5)',
+        }}
+      />
+
+      {/* Top-left corner */}
+      <div style={{ position: 'absolute', top: 5, left: 6, color: '#fff', fontWeight: 900, fontSize: cornerSize, lineHeight: 1 }}>
+        {label}
       </div>
 
-      {/* Corner top-left */}
-      <div className={`absolute top-1 left-1.5 leading-none text-white`}>
-        <div className={`font-black ${sm ? 'text-[9px]' : 'text-xs'}`}>{label}</div>
+      {/* Center label */}
+      <div style={{
+        position: 'absolute', inset: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: '#fff', fontWeight: 900, fontSize: centerSize,
+        textShadow: '1px 1px 4px rgba(0,0,0,0.4)',
+      }}>
+        {label}
       </div>
 
-      {/* Corner bottom-right rotated */}
-      <div className={`absolute bottom-1 right-1.5 leading-none text-white rotate-180`}>
-        <div className={`font-black ${sm ? 'text-[9px]' : 'text-xs'}`}>{label}</div>
+      {/* Bottom-right corner (rotated) */}
+      <div style={{
+        position: 'absolute', bottom: 5, right: 6,
+        color: '#fff', fontWeight: 900, fontSize: cornerSize,
+        lineHeight: 1, transform: 'rotate(180deg)',
+      }}>
+        {label}
       </div>
-    </motion.div>
-  );
-}
 
-interface FaceDownCardProps {
-  size?: 'sm' | 'md';
-  count?: number;
-}
-
-export function FaceDownCard({ size = 'md', count }: FaceDownCardProps) {
-  const sm = size === 'sm';
-  return (
-    <div
-      className={`relative rounded-2xl border-4 border-white/20 flex-shrink-0
-        ${sm ? 'w-[46px] h-[64px]' : 'w-[72px] h-[100px]'}
-      `}
-      style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #1e1b4b 100%)' }}
-    >
-      <div className="absolute inset-[6px] rounded-xl border-2 border-white/10 flex items-center justify-center">
-        <span className={`font-black text-white/40 ${sm ? 'text-sm' : 'text-2xl'}`}>8</span>
-      </div>
-      {count !== undefined && (
-        <div className="absolute -top-2 -right-2 bg-white text-gray-900 text-[10px] font-black rounded-full w-5 h-5 flex items-center justify-center shadow-md">
-          {count}
-        </div>
+      {/* Playable glow ring */}
+      {(playable || selected) && (
+        <div style={{
+          position: 'absolute', inset: -3, borderRadius: 13,
+          boxShadow: shadow, pointerEvents: 'none',
+        }} />
       )}
-    </div>
+    </motion.div>
   );
 }
