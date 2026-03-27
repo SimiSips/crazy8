@@ -7,14 +7,14 @@ export const CARD_BG: Record<string, string> = {
   red: '#cc0000',
   green: '#16a34a',
   blue: '#1d4ed8',
-  yellow: '#ca8a04',
+  yellow: '#eab308',
 };
 
 const CARD_SHADOW: Record<string, string> = {
   red: '0 0 24px rgba(220,0,0,0.8)',
   green: '0 0 24px rgba(22,163,74,0.8)',
   blue: '0 0 24px rgba(29,78,216,0.8)',
-  yellow: '0 0 24px rgba(202,138,4,0.8)',
+  yellow: '0 0 24px rgba(234,179,8,0.8)',
 };
 
 const TYPE_CENTER: Record<string, string> = {
@@ -111,7 +111,7 @@ export function PlayingCard({ card, playable, selected, onClick, size = 'md', ch
   const label = cardCenter(card);
   const wildBg = chosenColor && CARD_BG[chosenColor]
     ? CARD_BG[chosenColor]
-    : 'linear-gradient(135deg,#cc0000 0%,#ca8a04 33%,#16a34a 66%,#1d4ed8 100%)';
+    : 'linear-gradient(135deg,#cc0000 0%,#eab308 33%,#16a34a 66%,#1d4ed8 100%)';
   const bg = isWild ? wildBg : CARD_BG[card.color ?? 'red'];
 
   const W = size === 'md' ? 72 : 50;
