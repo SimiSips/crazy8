@@ -86,6 +86,13 @@ export default function GamePage() {
     return () => clearTimeout(t);
   }, [game?.lastAction]);
 
+  // When host resets the game, redirect all players back to the lobby
+  useEffect(() => {
+    if (game?.status === 'lobby') {
+      router.replace(`/lobby/${gameId}`);
+    }
+  }, [game?.status, gameId, router]);
+
   const isMyTurn = game ? game.playerOrder[game.currentPlayerIndex] === myId : false;
   const myHand = game?.players[myId]?.hand ?? [];
   const topCard = game?.discardPile[game.discardPile.length - 1] ?? null;
@@ -174,8 +181,12 @@ export default function GamePage() {
           </div>
 
           <div className="flex flex-col gap-3">
-            {game.players[myId]?.isHost && (
+            {game.players[myId]?.isHost ? (
               <button onClick={handleReset} className="w-full py-4 rounded-2xl font-black bg-white text-gray-900 active:scale-95 transition-transform shadow-xl">
+                Play Again
+              </button>
+            ) : (
+              <button onClick={() => router.replace(`/lobby/${gameId}`)} className="w-full py-4 rounded-2xl font-black bg-white text-gray-900 active:scale-95 transition-transform shadow-xl">
                 Play Again
               </button>
             )}
