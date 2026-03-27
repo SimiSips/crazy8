@@ -234,6 +234,11 @@ export default function GamePage() {
     topOpponentIds = opponents.slice(1, n - 1);
   }
 
+  const nextPlayerIndex = (game.currentPlayerIndex + game.direction + game.playerOrder.length) % game.playerOrder.length;
+  const nextPlayerId = game.playerOrder[nextPlayerIndex];
+  const nextPlayerName = game.players[nextPlayerId]?.name ?? '...';
+  const currentPlayerName = game.players[currentPlayerId]?.name ?? '...';
+
   const colorDotStyle: React.CSSProperties = {
     width: 14, height: 14, borderRadius: '50%',
     background: CARD_BG[game.currentColor],
@@ -375,24 +380,26 @@ export default function GamePage() {
             </div>
           </div>
 
-          {/* Direction arrow + turn indicator */}
+          {/* Turn flow: previous → next */}
           <div className="flex flex-col items-center gap-1.5">
-            <div className="bg-black/30 backdrop-blur-sm rounded-full px-3 py-1 flex items-center gap-1.5">
-              <motion.span
-                key={game.direction}
-                initial={{ rotate: 0, opacity: 0 }}
-                animate={{ rotate: 360, opacity: 1 }}
-                transition={{ duration: 0.4 }}
-                className="text-white text-base"
-                style={{ display: 'inline-block' }}
-              >
-                {game.direction === 1 ? '↻' : '↺'}
-              </motion.span>
-              <span className="text-white/70 text-[10px] font-semibold">
-                {game.direction === 1 ? 'Clockwise' : 'Counter-clockwise'}
+            {/* Player flow arrow */}
+            <motion.div
+              key={`${currentPlayerId}-${nextPlayerId}`}
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="bg-black/30 backdrop-blur-sm rounded-full px-3 py-1.5 flex items-center gap-1.5"
+            >
+              <span className={`text-[11px] font-black truncate max-w-[60px] ${currentPlayerId === myId ? 'text-yellow-300' : 'text-white'}`}>
+                {currentPlayerId === myId ? 'You' : currentPlayerName}
               </span>
-            </div>
+              <span className="text-white/60 text-xs">→</span>
+              <span className={`text-[11px] font-black truncate max-w-[60px] ${nextPlayerId === myId ? 'text-yellow-300' : 'text-white/80'}`}>
+                {nextPlayerId === myId ? 'You' : nextPlayerName}
+              </span>
+            </motion.div>
 
+            {/* Turn pill */}
             <div className={`rounded-full px-4 py-1.5 text-xs font-bold text-center max-w-[200px]
               ${isMyTurn ? 'bg-white text-gray-900 shadow-lg' : 'bg-black/40 text-white/80'}`}
             >
