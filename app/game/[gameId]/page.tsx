@@ -406,9 +406,9 @@ export default function GamePage() {
           </div>
         </div>
 
-        {/* Hand */}
+        {/* Hand — paddingTop gives cards room to lift without clipping */}
         <div className="overflow-x-auto scrollbar-hide px-3" onClick={e => e.stopPropagation()}>
-          <div className="flex min-w-max pb-2 pt-1" style={{ gap: 6 }}>
+          <div className="flex min-w-max pb-3" style={{ gap: 6, paddingTop: 32 }}>
             {myHand.map(card => (
               <PlayingCard
                 key={card.id}
