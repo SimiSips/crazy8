@@ -237,7 +237,11 @@ export default function GamePage() {
   };
 
   return (
-    <div className="h-full flex flex-col overflow-hidden relative" style={TABLE_BG}>
+    <div
+      className="h-full flex flex-col overflow-hidden relative"
+      style={TABLE_BG}
+      onClick={() => setSelectedCardId(null)}
+    >
 
       {/* ── Top bar ─────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-4 pt-3 flex-shrink-0">
@@ -403,7 +407,7 @@ export default function GamePage() {
         </div>
 
         {/* Hand */}
-        <div className="overflow-x-auto scrollbar-hide px-3">
+        <div className="overflow-x-auto scrollbar-hide px-3" onClick={e => e.stopPropagation()}>
           <div className="flex min-w-max pb-2 pt-1" style={{ gap: 6 }}>
             {myHand.map(card => (
               <PlayingCard
@@ -418,34 +422,6 @@ export default function GamePage() {
           </div>
         </div>
 
-        {/* Play / Cancel buttons */}
-        <AnimatePresence>
-          {selectedCardId && !showColorPicker && (
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 16 }}
-              className="flex gap-2 px-4 pt-1 pb-1"
-            >
-              <button
-                onClick={() => {
-                  const card = myHand.find(c => c.id === selectedCardId);
-                  if (card?.type === 'wild8') setShowColorPicker(true);
-                  else if (selectedCardId) submitPlay(selectedCardId);
-                }}
-                className="flex-1 py-3 rounded-2xl font-black text-sm bg-white text-gray-900 active:scale-95 transition-transform shadow-lg"
-              >
-                Play Card
-              </button>
-              <button
-                onClick={() => setSelectedCardId(null)}
-                className="px-5 py-3 rounded-2xl font-bold text-sm bg-black/30 border border-white/20 text-white active:scale-95 transition-transform"
-              >
-                Cancel
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
 
       {/* Color picker modal */}
