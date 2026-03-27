@@ -4,17 +4,17 @@ import type { Card } from '@/lib/types';
 
 // ─── Color maps ────────────────────────────────────────────────────────────────
 export const CARD_BG: Record<string, string> = {
-  red: '#f03030',
-  green: '#22c55e',
-  blue: '#3b82f6',
-  yellow: '#facc15',
+  red: '#cc0000',
+  green: '#16a34a',
+  blue: '#1d4ed8',
+  yellow: '#ca8a04',
 };
 
 const CARD_SHADOW: Record<string, string> = {
-  red: '0 0 20px rgba(229,62,62,0.7)',
-  green: '0 0 20px rgba(56,161,105,0.7)',
-  blue: '0 0 20px rgba(49,130,206,0.7)',
-  yellow: '0 0 20px rgba(214,158,46,0.7)',
+  red: '0 0 24px rgba(220,0,0,0.8)',
+  green: '0 0 24px rgba(22,163,74,0.8)',
+  blue: '0 0 24px rgba(29,78,216,0.8)',
+  yellow: '0 0 24px rgba(202,138,4,0.8)',
 };
 
 const TYPE_CENTER: Record<string, string> = {
@@ -110,11 +110,9 @@ export function PlayingCard({ card, playable, selected, onClick, size = 'md', ch
   const isWild = card.type === 'wild8';
   const label = cardCenter(card);
   const wildBg = chosenColor && CARD_BG[chosenColor]
-    ? `linear-gradient(160deg, ${CARD_BG[chosenColor]}dd 0%, ${CARD_BG[chosenColor]} 100%)`
-    : 'linear-gradient(135deg,#e53e3e 0%,#d69e2e 33%,#38a169 66%,#3182ce 100%)';
-  const bg = isWild
-    ? wildBg
-    : `linear-gradient(160deg, ${CARD_BG[card.color ?? 'red']}dd 0%, ${CARD_BG[card.color ?? 'red']} 100%)`;
+    ? CARD_BG[chosenColor]
+    : 'linear-gradient(135deg,#cc0000 0%,#ca8a04 33%,#16a34a 66%,#1d4ed8 100%)';
+  const bg = isWild ? wildBg : CARD_BG[card.color ?? 'red'];
 
   const W = size === 'md' ? 72 : 50;
   const H = size === 'md' ? 104 : 72;
@@ -139,8 +137,7 @@ export function PlayingCard({ card, playable, selected, onClick, size = 'md', ch
         position: 'relative',
         cursor: playable ? 'pointer' : 'default',
         flexShrink: 0,
-        opacity: !playable && !selected ? 0.55 : 1,
-        filter: !playable && !selected ? 'saturate(0.6)' : 'none',
+        opacity: !playable && !selected ? 0.45 : 1,
       }}
     >
       {/* Inner frame */}
