@@ -192,14 +192,36 @@ export default function GamePage() {
   const currentPlayerId = game.playerOrder[game.currentPlayerIndex];
   const myIndex = game.playerOrder.indexOf(myId);
   const me = game.players[myId];
-  const otherPlayerIds = game.playerOrder.filter(id => id !== myId);
 
-  // Position opponents: [0]=top, [1]=left, [2]=right, [3+]=extra top strip
-  const topOpponentIds = otherPlayerIds.length <= 1
-    ? otherPlayerIds
-    : [otherPlayerIds[0], ...otherPlayerIds.slice(3)];
-  const leftOpponentId = otherPlayerIds[1] ?? null;
-  const rightOpponentId = otherPlayerIds[2] ?? null;
+  // Rotate playerOrder so *my* seat is index 0 — this makes opponent positions
+  // consistent across all screens (everyone agrees who sits left/right/top).
+  // opponents[0] = next player in turn order (seat to my right visually)
+  // opponents[n-1] = previous player (seat to my left)
+  // opponents[middle] = across (top)
+  const opponents = myIndex >= 0
+    ? [...game.playerOrder.slice(myIndex + 1), ...game.playerOrder.slice(0, myIndex)]
+    : game.playerOrder.filter(id => id !== myId);
+  const n = opponents.length;
+
+  let topOpponentIds: string[];
+  let leftOpponentId: string | null = null;
+  let rightOpponentId: string | null = null;
+
+  if (n === 0) {
+    topOpponentIds = [];
+  } else if (n === 1) {
+    topOpponentIds = [opponents[0]];
+  } else if (n === 2) {
+    // 3-player: next on right, prev on left, nothing at top
+    rightOpponentId = opponents[0];
+    leftOpponentId = opponents[1];
+    topOpponentIds = [];
+  } else {
+    // 4+ players: next=right, prev=left, middle seats=top strip
+    rightOpponentId = opponents[0];
+    leftOpponentId = opponents[n - 1];
+    topOpponentIds = opponents.slice(1, n - 1);
+  }
 
   const colorDotStyle: React.CSSProperties = {
     width: 14, height: 14, borderRadius: '50%',
