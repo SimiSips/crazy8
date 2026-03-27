@@ -137,7 +137,7 @@ export function PlayingCard({ card, playable, selected, onClick, size = 'md', ch
         position: 'relative',
         cursor: playable ? 'pointer' : 'default',
         flexShrink: 0,
-        opacity: !playable && !selected ? 0.45 : 1,
+        opacity: 1,
       }}
     >
       {/* Inner frame */}
