@@ -343,20 +343,27 @@ export default function GamePage() {
               )}
             </button>
 
-            {/* Discard pile */}
+            {/* Discard pile — white mat so any card colour pops off the table */}
             <div className="flex flex-col items-center gap-1">
-              {topCard ? (
-                <motion.div
-                  key={topCard.id}
-                  initial={{ scale: 0.7, rotate: -8, opacity: 0 }}
-                  animate={{ scale: 1, rotate: 0, opacity: 1 }}
-                  transition={{ type: 'spring', stiffness: 400, damping: 22 }}
-                >
-                  <PlayingCard card={topCard} size="md" />
-                </motion.div>
-              ) : (
-                <div style={{ width: 72, height: 104, borderRadius: 10, border: '2px dashed rgba(255,255,255,0.3)' }} />
-              )}
+              <div style={{
+                padding: 5,
+                borderRadius: 14,
+                background: 'rgba(255,255,255,0.18)',
+                boxShadow: '0 0 0 2px rgba(255,255,255,0.55), 0 6px 24px rgba(0,0,0,0.35)',
+              }}>
+                {topCard ? (
+                  <motion.div
+                    key={topCard.id}
+                    initial={{ scale: 0.7, rotate: -8, opacity: 0 }}
+                    animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+                  >
+                    <PlayingCard card={topCard} size="md" />
+                  </motion.div>
+                ) : (
+                  <div style={{ width: 72, height: 104, borderRadius: 10, border: '2px dashed rgba(255,255,255,0.4)' }} />
+                )}
+              </div>
             </div>
           </div>
 
