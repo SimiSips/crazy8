@@ -4,10 +4,10 @@ import type { Card } from '@/lib/types';
 
 // ─── Color maps ────────────────────────────────────────────────────────────────
 export const CARD_BG: Record<string, string> = {
-  red: '#e53e3e',
-  green: '#38a169',
-  blue: '#3182ce',
-  yellow: '#d69e2e',
+  red: '#f03030',
+  green: '#22c55e',
+  blue: '#3b82f6',
+  yellow: '#facc15',
 };
 
 const CARD_SHADOW: Record<string, string> = {
@@ -103,13 +103,17 @@ interface PlayingCardProps {
   selected?: boolean;
   onClick?: () => void;
   size?: 'sm' | 'md';
+  chosenColor?: string; // for wild8 on discard: shows the color that was picked
 }
 
-export function PlayingCard({ card, playable, selected, onClick, size = 'md' }: PlayingCardProps) {
+export function PlayingCard({ card, playable, selected, onClick, size = 'md', chosenColor }: PlayingCardProps) {
   const isWild = card.type === 'wild8';
   const label = cardCenter(card);
+  const wildBg = chosenColor && CARD_BG[chosenColor]
+    ? `linear-gradient(160deg, ${CARD_BG[chosenColor]}dd 0%, ${CARD_BG[chosenColor]} 100%)`
+    : 'linear-gradient(135deg,#e53e3e 0%,#d69e2e 33%,#38a169 66%,#3182ce 100%)';
   const bg = isWild
-    ? 'linear-gradient(135deg,#e53e3e 0%,#d69e2e 33%,#38a169 66%,#3182ce 100%)'
+    ? wildBg
     : `linear-gradient(160deg, ${CARD_BG[card.color ?? 'red']}dd 0%, ${CARD_BG[card.color ?? 'red']} 100%)`;
 
   const W = size === 'md' ? 72 : 50;

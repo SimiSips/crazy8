@@ -12,67 +12,40 @@ import type { GameState, Card, Color } from '@/lib/types';
 
 // ─── Felt table background style ───────────────────────────────────────────────
 const TABLE_BG: React.CSSProperties = {
-  background: 'radial-gradient(ellipse at 45% 35%, #c0392b 0%, #a93226 40%, #922b21 75%, #7b241c 100%)',
+  background: 'radial-gradient(ellipse at 45% 35%, #dc2626 0%, #b91c1c 45%, #991b1b 80%, #7f1d1d 100%)',
 };
 
-// ─── Per-player position around the table ─────────────────────────────────────
-// otherPlayers[0] = top, [1] = left, [2] = right
-const POSITIONS = ['top', 'left', 'right'] as const;
-
-// ─── Opponent slot ─────────────────────────────────────────────────────────────
+// ─── Single opponent card in the top strip ────────────────────────────────────
 function OpponentSlot({
   player,
   wins,
   isCurrent,
   playerIndex,
-  position,
 }: {
   player: { id: string; name: string; hand: Card[] };
   wins: number;
   isCurrent: boolean;
   playerIndex: number;
-  position: 'top' | 'left' | 'right';
 }) {
-  const fanDir = position === 'top' ? 'horizontal' : 'horizontal';
-  const count = player.hand.length;
-
-  const inner = (
-    <>
-      <CardFan count={count} direction={fanDir} />
-      <div className="flex flex-col items-center gap-0.5 mt-1">
-        <PlayerAvatar
-          name={player.name}
-          index={playerIndex}
-          wins={wins}
-          isCurrentTurn={isCurrent}
-          size="sm"
-        />
-        <span className="text-white text-[11px] font-bold drop-shadow">{player.name}</span>
-        {isCurrent && (
-          <span className="text-yellow-300 text-[9px] font-black animate-pulse">▼ THEIR TURN</span>
-        )}
-      </div>
-    </>
-  );
-
-  if (position === 'top') {
-    return (
-      <motion.div
-        animate={isCurrent ? { scale: 1.04 } : { scale: 1 }}
-        className="flex flex-col items-center gap-1"
-      >
-        {inner}
-      </motion.div>
-    );
-  }
-
-  // left / right: cards on outer edge, avatar inner
   return (
     <motion.div
-      animate={isCurrent ? { scale: 1.04 } : { scale: 1 }}
-      className={`flex flex-col items-center gap-1 ${position === 'left' ? 'items-start' : 'items-end'}`}
+      animate={isCurrent ? { scale: 1.06, y: -2 } : { scale: 1, y: 0 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+      className={`flex flex-col items-center gap-1 px-2 py-2 rounded-2xl flex-shrink-0
+        ${isCurrent ? 'bg-white/15 ring-2 ring-white/40' : 'bg-black/20'}`}
     >
-      {inner}
+      <CardFan count={player.hand.length} />
+      <PlayerAvatar
+        name={player.name}
+        index={playerIndex}
+        wins={wins}
+        isCurrentTurn={isCurrent}
+        size="sm"
+      />
+      <span className="text-white text-[10px] font-bold drop-shadow max-w-[60px] truncate">
+        {player.name}
+      </span>
+      <span className="text-white/50 text-[9px]">{player.hand.length} cards</span>
     </motion.div>
   );
 }
@@ -217,17 +190,7 @@ export default function GamePage() {
   const currentPlayerId = game.playerOrder[game.currentPlayerIndex];
   const myIndex = game.playerOrder.indexOf(myId);
   const me = game.players[myId];
-
-  // Order other players: starting from the player after me
-  const otherPlayerIds = game.playerOrder
-    .filter(id => id !== myId)
-    // put them in order: top, left, right
-    .slice();
-
-  // Assign up to 3 positions
-  const topPlayer = otherPlayerIds[0] ? game.players[otherPlayerIds[0]] : null;
-  const leftPlayer = otherPlayerIds[1] ? game.players[otherPlayerIds[1]] : null;
-  const rightPlayer = otherPlayerIds[2] ? game.players[otherPlayerIds[2]] : null;
+  const otherPlayerIds = game.playerOrder.filter(id => id !== myId);
 
   const colorDotStyle: React.CSSProperties = {
     width: 14, height: 14, borderRadius: '50%',
@@ -242,14 +205,13 @@ export default function GamePage() {
       style={TABLE_BG}
       onClick={() => setSelectedCardId(null)}
     >
-
       {/* ── Top bar ─────────────────────────────────────────── */}
       <div className="flex items-center justify-between px-4 pt-3 flex-shrink-0">
         <div className="bg-black/30 backdrop-blur-sm rounded-full px-3 py-1.5 flex items-center gap-1.5">
           <div style={colorDotStyle} />
           <span className="text-white text-xs font-bold capitalize">{game.currentColor}</span>
           {game.pendingDraw > 0 && (
-            <span className="bg-red-500 text-white text-[10px] font-black rounded-full px-1.5 py-0.5 ml-1">
+            <span className="bg-red-800 text-white text-[10px] font-black rounded-full px-1.5 py-0.5 ml-1">
               +{game.pendingDraw}
             </span>
           )}
@@ -276,130 +238,117 @@ export default function GamePage() {
         )}
       </AnimatePresence>
 
-      {/* ── Top player ──────────────────────────────────────── */}
-      <div className="flex-shrink-0 flex justify-center pt-3 pb-1 min-h-[100px]">
-        {topPlayer ? (
-          <OpponentSlot
-            player={topPlayer}
-            wins={stats[otherPlayerIds[0]]?.wins ?? 0}
-            isCurrent={otherPlayerIds[0] === currentPlayerId}
-            playerIndex={game.playerOrder.indexOf(otherPlayerIds[0])}
-            position="top"
-          />
-        ) : (
-          <div className="h-[100px]" />
-        )}
+      {/* ── Opponents strip (horizontal scroll, supports 1–7 players) ── */}
+      <div className="flex-shrink-0 pt-2 pb-1">
+        <div className="overflow-x-auto scrollbar-hide px-3">
+          <div className="flex gap-2 min-w-max">
+            {otherPlayerIds.map(id => (
+              <OpponentSlot
+                key={id}
+                player={game.players[id]}
+                wins={stats[id]?.wins ?? 0}
+                isCurrent={id === currentPlayerId}
+                playerIndex={game.playerOrder.indexOf(id)}
+              />
+            ))}
+          </div>
+        </div>
       </div>
 
-      {/* ── Middle row: left | table | right ────────────────── */}
-      <div className="flex-1 flex items-center px-2 gap-2 min-h-0">
+      {/* ── Center table ────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 min-h-0">
+        <div className="flex items-center gap-6">
 
-        {/* Left player */}
-        <div className="flex flex-col items-center justify-center w-16 flex-shrink-0">
-          {leftPlayer && (
-            <OpponentSlot
-              player={leftPlayer}
-              wins={stats[otherPlayerIds[1]]?.wins ?? 0}
-              isCurrent={otherPlayerIds[1] === currentPlayerId}
-              playerIndex={game.playerOrder.indexOf(otherPlayerIds[1])}
-              position="left"
-            />
-          )}
-        </div>
-
-        {/* Center table */}
-        <div className="flex-1 flex flex-col items-center justify-center gap-3">
-          {/* Draw + Discard */}
-          <div className="flex items-center gap-5">
-            {/* Draw pile */}
-            <button
-              onClick={isMyTurn ? handleDraw : undefined}
-              className={`flex flex-col items-center gap-1 ${isMyTurn ? 'active:scale-95' : ''} transition-transform`}
-            >
-              <div style={{ position: 'relative' }}>
+          {/* Draw pile */}
+          <button
+            onClick={isMyTurn ? handleDraw : undefined}
+            className={`flex flex-col items-center gap-1 ${isMyTurn ? 'active:scale-95' : ''} transition-transform`}
+          >
+            <div style={{ position: 'relative' }}>
+              <FaceDownCard />
+              <div style={{ position: 'absolute', top: -2, left: -2, zIndex: -1, transform: 'scale(0.97)', opacity: 0.6 }}>
                 <FaceDownCard />
-                {/* Stack depth shadow cards */}
-                <div style={{ position: 'absolute', top: -2, left: -2, zIndex: -1, transform: 'scale(0.97)', opacity: 0.6 }}>
-                  <FaceDownCard />
-                </div>
-                <div style={{ position: 'absolute', top: -4, left: -4, zIndex: -2, transform: 'scale(0.94)', opacity: 0.3 }}>
-                  <FaceDownCard />
-                </div>
-                {/* Card count */}
-                <div style={{
-                  position: 'absolute', top: -6, right: -6,
-                  background: '#fff', color: '#111', fontSize: 9, fontWeight: 900,
-                  borderRadius: '50%', width: 18, height: 18,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
-                }}>
-                  {game.drawPile.length}
-                </div>
               </div>
-              {isMyTurn && (
-                <span className="text-white/80 text-[10px] font-bold">
-                  {game.pendingDraw > 0 ? `Draw +${game.pendingDraw}` : 'Draw'}
-                </span>
-              )}
-            </button>
-
-            {/* Discard pile — white mat so any card colour pops off the table */}
-            <div className="flex flex-col items-center gap-1">
+              <div style={{ position: 'absolute', top: -4, left: -4, zIndex: -2, transform: 'scale(0.94)', opacity: 0.3 }}>
+                <FaceDownCard />
+              </div>
               <div style={{
-                padding: 5,
-                borderRadius: 14,
-                background: 'rgba(255,255,255,0.18)',
-                boxShadow: '0 0 0 2px rgba(255,255,255,0.55), 0 6px 24px rgba(0,0,0,0.35)',
+                position: 'absolute', top: -6, right: -6,
+                background: '#fff', color: '#111', fontSize: 9, fontWeight: 900,
+                borderRadius: '50%', width: 18, height: 18,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
               }}>
-                {topCard ? (
-                  <motion.div
-                    key={topCard.id}
-                    initial={{ scale: 0.7, rotate: -8, opacity: 0 }}
-                    animate={{ scale: 1, rotate: 0, opacity: 1 }}
-                    transition={{ type: 'spring', stiffness: 400, damping: 22 }}
-                  >
-                    <PlayingCard card={topCard} size="md" />
-                  </motion.div>
-                ) : (
-                  <div style={{ width: 72, height: 104, borderRadius: 10, border: '2px dashed rgba(255,255,255,0.4)' }} />
-                )}
+                {game.drawPile.length}
               </div>
             </div>
+            {isMyTurn && (
+              <span className="text-white/80 text-[10px] font-bold">
+                {game.pendingDraw > 0 ? `Draw +${game.pendingDraw}` : 'Draw'}
+              </span>
+            )}
+          </button>
+
+          {/* Discard pile */}
+          <div style={{
+            padding: 5, borderRadius: 14,
+            background: 'rgba(255,255,255,0.18)',
+            boxShadow: '0 0 0 2px rgba(255,255,255,0.55), 0 6px 24px rgba(0,0,0,0.35)',
+          }}>
+            {topCard ? (
+              <motion.div
+                key={topCard.id}
+                initial={{ scale: 0.7, rotate: -8, opacity: 0 }}
+                animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+              >
+                <PlayingCard
+                  card={topCard}
+                  size="md"
+                  chosenColor={topCard.type === 'wild8' ? game.currentColor : undefined}
+                />
+              </motion.div>
+            ) : (
+              <div style={{ width: 72, height: 104, borderRadius: 10, border: '2px dashed rgba(255,255,255,0.4)' }} />
+            )}
+          </div>
+        </div>
+
+        {/* Direction arrow + turn indicator */}
+        <div className="flex flex-col items-center gap-1.5">
+          {/* Direction badge */}
+          <div className="bg-black/30 backdrop-blur-sm rounded-full px-3 py-1 flex items-center gap-1.5">
+            <motion.span
+              key={game.direction}
+              initial={{ rotate: 0, opacity: 0 }}
+              animate={{ rotate: 360, opacity: 1 }}
+              transition={{ duration: 0.4 }}
+              className="text-white text-base"
+              style={{ display: 'inline-block' }}
+            >
+              {game.direction === 1 ? '↻' : '↺'}
+            </motion.span>
+            <span className="text-white/70 text-[10px] font-semibold">
+              {game.direction === 1 ? 'Clockwise' : 'Counter-clockwise'}
+            </span>
           </div>
 
-          {/* Turn indicator pill */}
-          <div className={`rounded-full px-4 py-1.5 text-xs font-bold text-center max-w-[200px]
+          {/* Turn pill */}
+          <div className={`rounded-full px-4 py-1.5 text-xs font-bold text-center max-w-[220px]
             ${isMyTurn ? 'bg-white text-gray-900 shadow-lg' : 'bg-black/40 text-white/80'}`}
           >
             {isMyTurn
-              ? game.pendingDraw > 0
-                ? `Draw +${game.pendingDraw} or stack a +2`
-                : 'Your turn'
-              : `${game.players[currentPlayerId]?.name ?? '...'}'s turn`
-            }
+              ? game.pendingDraw > 0 ? `Draw +${game.pendingDraw} or stack a +2` : 'Your turn'
+              : `${game.players[currentPlayerId]?.name ?? '...'}'s turn`}
           </div>
-
-          {error && <p className="text-red-300 text-[11px] text-center">{error}</p>}
         </div>
 
-        {/* Right player */}
-        <div className="flex flex-col items-center justify-center w-16 flex-shrink-0">
-          {rightPlayer && (
-            <OpponentSlot
-              player={rightPlayer}
-              wins={stats[otherPlayerIds[2]]?.wins ?? 0}
-              isCurrent={otherPlayerIds[2] === currentPlayerId}
-              playerIndex={game.playerOrder.indexOf(otherPlayerIds[2])}
-              position="right"
-            />
-          )}
-        </div>
+        {error && <p className="text-red-300 text-[11px] text-center">{error}</p>}
       </div>
 
       {/* ── My area ─────────────────────────────────────────── */}
       <div className="flex-shrink-0 pb-2">
-        {/* My avatar */}
-        <div className="flex justify-center mb-2">
+        <div className="flex justify-center mb-1">
           <div className="flex flex-col items-center gap-0.5">
             <PlayerAvatar
               name={me?.name ?? ''}
@@ -413,7 +362,7 @@ export default function GamePage() {
           </div>
         </div>
 
-        {/* Hand — paddingTop gives cards room to lift without clipping */}
+        {/* Hand */}
         <div className="overflow-x-auto scrollbar-hide px-3" onClick={e => e.stopPropagation()}>
           <div className="flex min-w-max pb-3" style={{ gap: 6, paddingTop: 32 }}>
             {myHand.map(card => (
@@ -428,10 +377,8 @@ export default function GamePage() {
             ))}
           </div>
         </div>
-
       </div>
 
-      {/* Color picker modal */}
       <ColorPicker
         open={showColorPicker}
         onSelect={color => { if (selectedCardId) submitPlay(selectedCardId, color); }}

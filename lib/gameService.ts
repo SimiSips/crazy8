@@ -46,7 +46,7 @@ export async function joinGame(gameId: string, playerId: string, playerName: str
     if (!snap.exists()) throw new Error('Game not found');
     const state = snap.data() as GameState;
     if (state.status !== 'lobby') throw new Error('Game already started');
-    if (Object.keys(state.players).length >= 4) throw new Error('Game is full (max 4 players)');
+    if (Object.keys(state.players).length >= 8) throw new Error('Game is full (max 8 players)');
     if (state.players[playerId]) return;
 
     tx.update(ref, {
@@ -68,7 +68,10 @@ export async function startGame(gameId: string): Promise<void> {
     const state = snap.data() as GameState;
     if (state.status !== 'lobby') throw new Error('Game already started');
 
-    let deck = shuffle(createDeck());
+    const playerCount = state.playerOrder.length;
+    // Use 2 decks for 5+ players so the draw pile stays healthy
+    const rawDeck = playerCount >= 5 ? [...createDeck(), ...createDeck()] : createDeck();
+    let deck = shuffle(rawDeck);
     const players = { ...state.players };
 
     for (const playerId of state.playerOrder) {
@@ -187,22 +190,31 @@ export async function drawCard(gameId: string, playerId: string): Promise<void> 
 
     const drawnCards = drawPile.splice(0, Math.min(drawCount, drawPile.length));
     const player = state.players[playerId];
-    const nextIndex = advanceTurn(
-      state.currentPlayerIndex,
-      state.playerOrder.length,
-      state.direction,
-      1,
-    );
+    const newHand = [...player.hand, ...drawnCards];
 
-    const actionLabel =
-      state.pendingDraw > 0
-        ? `${player.name} was hit with +${drawCount}!`
-        : `${player.name} drew a card`;
+    // If drawing due to a penalty (+2 stack), always advance turn.
+    // If drawing normally (1 card), keep the turn so the player can play it if it matches.
+    const forcedDraw = state.pendingDraw > 0;
+    const topCard = state.discardPile[state.discardPile.length - 1];
+    const drawnCard = drawnCards[0];
+    const drawnIsPlayable = !forcedDraw && drawnCard
+      ? canPlayCard(drawnCard, topCard, state.currentColor, 0)
+      : false;
+
+    const nextIndex = forcedDraw || !drawnIsPlayable
+      ? advanceTurn(state.currentPlayerIndex, state.playerOrder.length, state.direction, 1)
+      : state.currentPlayerIndex; // stay on player's turn so they can play the drawn card
+
+    const actionLabel = forcedDraw
+      ? `${player.name} was hit with +${drawCount}!`
+      : drawnIsPlayable
+      ? `${player.name} drew a playable card!`
+      : `${player.name} drew a card`;
 
     tx.update(ref, {
       drawPile,
       discardPile,
-      [`players.${playerId}.hand`]: [...player.hand, ...drawnCards],
+      [`players.${playerId}.hand`]: newHand,
       pendingDraw: 0,
       currentPlayerIndex: nextIndex,
       lastAction: actionLabel,

@@ -6,6 +6,10 @@ const GRADIENTS = [
   'from-pink-500 to-red-500',
   'from-amber-500 to-orange-500',
   'from-teal-500 to-green-500',
+  'from-cyan-400 to-blue-400',
+  'from-rose-500 to-pink-400',
+  'from-lime-500 to-green-400',
+  'from-indigo-500 to-purple-400',
 ];
 
 function medalEmoji(wins: number): string {

@@ -84,7 +84,7 @@ export default function LobbyPage() {
       {/* Player list */}
       <div className="w-full max-w-sm flex-1 mt-8">
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
-          Players ({playerList.length}/4)
+          Players ({playerList.length}/8)
         </p>
         <div className="space-y-2">
           <AnimatePresence>
