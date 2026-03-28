@@ -69,21 +69,24 @@ export async function startGame(gameId: string): Promise<void> {
     if (state.status !== 'lobby') throw new Error('Game already started');
 
     const playerCount = state.playerOrder.length;
+    // Randomise who goes first
+    const playerOrder = shuffle([...state.playerOrder]);
+
     // Use 2 decks for 5+ players so the draw pile stays healthy
     const rawDeck = playerCount >= 5 ? [...createDeck(), ...createDeck()] : createDeck();
     let deck = shuffle(rawDeck);
     const players = { ...state.players };
 
-    for (const playerId of state.playerOrder) {
+    for (const playerId of playerOrder) {
       players[playerId] = {
         ...players[playerId],
         hand: deck.splice(0, CARDS_PER_PLAYER),
       };
     }
 
-    // First card must not be wild8
+    // First card must be a plain number card (no wild8, draw2, skip, or reverse)
     let firstCard = deck.shift()!;
-    while (firstCard.type === 'wild8') {
+    while (firstCard.type !== 'number') {
       deck.push(firstCard);
       firstCard = deck.shift()!;
     }
@@ -91,6 +94,7 @@ export async function startGame(gameId: string): Promise<void> {
     tx.update(ref, {
       status: 'playing',
       players,
+      playerOrder,
       drawPile: deck,
       discardPile: [firstCard],
       currentColor: firstCard.color!,
