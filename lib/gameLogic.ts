@@ -15,7 +15,7 @@ export function createDeck(): Card[] {
     deck.push({ id: uid(), color, type: 'skip', value: null });
     deck.push({ id: uid(), color, type: 'reverse', value: null });
     deck.push({ id: uid(), color, type: 'draw2', value: null });
-    deck.push({ id: uid(), color, type: 'draw2', value: null }); // extra +2 per color
+    deck.push({ id: uid(), color, type: 'draw4', value: null });
   }
 
   // Wild 8s (4 of them, no color)
@@ -41,8 +41,8 @@ export function canPlayCard(
   currentColor: Color,
   pendingDraw: number,
 ): boolean {
-  // When there's a stacked draw penalty, only draw2 can counter-stack
-  if (pendingDraw > 0) return card.type === 'draw2';
+  // When there's a stacked draw penalty, only draw cards can counter-stack
+  if (pendingDraw > 0) return card.type === 'draw2' || card.type === 'draw4';
   // Wild 8 is always playable
   if (card.type === 'wild8') return true;
   // Match color
@@ -77,6 +77,9 @@ export function applyCardEffects(
       break;
     case 'draw2':
       pendingDraw += 2;
+      break;
+    case 'draw4':
+      pendingDraw += 4;
       break;
     case 'skip':
       advanceBy = 2;

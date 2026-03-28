@@ -1,5 +1,5 @@
 export type Color = 'red' | 'green' | 'blue' | 'yellow';
-export type CardType = 'number' | 'skip' | 'reverse' | 'draw2' | 'wild8';
+export type CardType = 'number' | 'skip' | 'reverse' | 'draw2' | 'draw4' | 'wild8';
 export type Direction = 1 | -1;
 export type GameStatus = 'lobby' | 'playing' | 'finished';
 

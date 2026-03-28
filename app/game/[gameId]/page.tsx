@@ -374,7 +374,7 @@ export default function GamePage() {
           <div className={`rounded-full px-4 py-1.5 text-xs font-bold text-center max-w-[200px]
             ${isMyTurn ? 'bg-white text-gray-900 shadow-lg' : 'bg-black/40 text-white/80'}`}>
             {isMyTurn
-              ? game.pendingDraw > 0 ? `Draw +${game.pendingDraw} or stack a +2` : 'Your turn'
+              ? game.pendingDraw > 0 ? `Draw +${game.pendingDraw} or stack a +2/+4` : 'Your turn'
               : `${game.players[currentPlayerId]?.name ?? '...'}'s turn`}
           </div>
 

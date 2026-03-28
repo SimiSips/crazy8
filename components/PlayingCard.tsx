@@ -21,6 +21,7 @@ const TYPE_CENTER: Record<string, string> = {
   skip: '⊘',
   reverse: '↺',
   draw2: '+2',
+  draw4: '+4',
   wild8: '8',
 };
 

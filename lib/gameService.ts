@@ -279,6 +279,7 @@ export function subscribeToGame(gameId: string, callback: (state: GameState) => 
 function buildActionLabel(card: Card, playerName: string): string {
   if (card.type === 'wild8') return `${playerName} played Wild 8`;
   if (card.type === 'draw2') return `${playerName} played +2 (${card.color})`;
+  if (card.type === 'draw4') return `${playerName} played +4 (${card.color})`;
   if (card.type === 'skip') return `${playerName} played Skip (${card.color})`;
   if (card.type === 'reverse') return `${playerName} played Reverse (${card.color})`;
   return `${playerName} played ${card.value} (${card.color})`;
