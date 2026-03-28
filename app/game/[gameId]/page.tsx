@@ -16,6 +16,7 @@ const TABLE_BG: React.CSSProperties = {
 };
 
 // ─── Opponent slot placed around the round table ──────────────────────────────
+// Kept compact (no card fan) so it never overlaps the felt oval.
 function TableOpponent({
   player, wins, isCurrent, playerIndex,
 }: {
@@ -24,15 +25,19 @@ function TableOpponent({
 }) {
   return (
     <motion.div
-      animate={isCurrent ? { scale: 1.08 } : { scale: 1 }}
+      animate={isCurrent ? { scale: 1.1 } : { scale: 1 }}
       transition={{ type: 'spring', stiffness: 300, damping: 22 }}
-      className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-2xl
-        ${isCurrent ? 'bg-white/15 ring-2 ring-white/40' : 'bg-black/20'}`}
-      style={{ minWidth: 52 }}
+      className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-2xl
+        ${isCurrent ? 'bg-white/15 ring-2 ring-white/40' : 'bg-black/25'}`}
+      style={{ width: 56 }}
     >
-      <CardFan count={player.hand.length} maxShow={5} />
       <PlayerAvatar name={player.name} index={playerIndex} wins={wins} isCurrentTurn={isCurrent} size="sm" />
-      <span className="text-white text-[9px] font-bold drop-shadow max-w-[56px] truncate">{player.name}</span>
+      <span className="text-white text-[9px] font-bold w-full text-center truncate leading-tight">
+        {player.name}
+      </span>
+      <span className="text-white/60 text-[9px] font-semibold leading-tight">
+        {player.hand.length} cards
+      </span>
     </motion.div>
   );
 }
@@ -247,11 +252,16 @@ export default function GamePage() {
   const nextPlayerName = game.players[nextPlayerId]?.name ?? '...';
   const currentPlayerName = game.players[currentPlayerId]?.name ?? '...';
 
-  // Ellipse radii for opponent ring — leave room for slot height/width
+  // Felt oval is sized to comfortably contain the center content.
+  // Opponents sit on a ring outside it with explicit clearance.
   const cx = tableDims.w / 2;
   const cy = tableDims.h / 2;
-  const rx = Math.max(tableDims.w / 2 - 68, 80);
-  const ry = Math.max(tableDims.h / 2 - 72, 80);
+  const feltRx = Math.max(tableDims.w * 0.30, 100);  // felt oval half-width
+  const feltRy = Math.max(tableDims.h * 0.30, 110);  // felt oval half-height
+  const SLOT_CLEAR_X = 44;  // half slot width + gap
+  const SLOT_CLEAR_Y = 44;  // half slot height + gap
+  const rx = Math.min(feltRx + SLOT_CLEAR_X, tableDims.w / 2 - 32);
+  const ry = Math.min(feltRy + SLOT_CLEAR_Y, tableDims.h / 2 - 28);
 
   const opponentAngles = getOpponentAngles(opponents.length);
 
@@ -306,17 +316,17 @@ export default function GamePage() {
       {/* ── Round table area ─────────────────────────────────── */}
       <div ref={tableRef} className="flex-1 relative min-h-0">
 
-        {/* Oval felt surface */}
+        {/* Oval felt surface — sized from feltRx/feltRy, always inside opponent ring */}
         <div style={{
           position: 'absolute',
           left: '50%', top: '50%',
           transform: 'translate(-50%, -50%)',
-          width: rx * 2 * 0.82,
-          height: ry * 2 * 0.82,
+          width: feltRx * 2,
+          height: feltRy * 2,
           borderRadius: '50%',
-          background: 'radial-gradient(ellipse at 40% 35%, rgba(0,0,0,0.18) 0%, rgba(0,0,0,0.45) 100%)',
-          border: '2.5px solid rgba(255,255,255,0.12)',
-          boxShadow: 'inset 0 0 48px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.06)',
+          background: 'radial-gradient(ellipse at 40% 35%, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.42) 100%)',
+          border: '2.5px solid rgba(255,255,255,0.13)',
+          boxShadow: 'inset 0 0 40px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)',
           pointerEvents: 'none',
         }} />
 
