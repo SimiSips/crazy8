@@ -15,6 +15,7 @@ export function createDeck(): Card[] {
     deck.push({ id: uid(), color, type: 'skip', value: null });
     deck.push({ id: uid(), color, type: 'reverse', value: null });
     deck.push({ id: uid(), color, type: 'draw2', value: null });
+    deck.push({ id: uid(), color, type: 'draw2', value: null }); // extra +2 per color
   }
 
   // Wild 8s (4 of them, no color)

@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { subscribeToGame, playCard, drawCard, resetGame } from '@/lib/gameService';
@@ -15,8 +15,8 @@ const TABLE_BG: React.CSSProperties = {
   background: 'radial-gradient(ellipse at 45% 35%, #dc2626 0%, #b91c1c 45%, #991b1b 80%, #7f1d1d 100%)',
 };
 
-// ─── Opponent in the top strip ────────────────────────────────────────────────
-function OpponentSlot({
+// ─── Opponent slot placed around the round table ──────────────────────────────
+function TableOpponent({
   player, wins, isCurrent, playerIndex,
 }: {
   player: { id: string; name: string; hand: Card[] };
@@ -24,37 +24,30 @@ function OpponentSlot({
 }) {
   return (
     <motion.div
-      animate={isCurrent ? { scale: 1.06, y: -2 } : { scale: 1, y: 0 }}
+      animate={isCurrent ? { scale: 1.08 } : { scale: 1 }}
       transition={{ type: 'spring', stiffness: 300, damping: 22 }}
-      className={`flex flex-col items-center gap-1 px-2 py-2 rounded-2xl flex-shrink-0
+      className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-2xl
         ${isCurrent ? 'bg-white/15 ring-2 ring-white/40' : 'bg-black/20'}`}
+      style={{ minWidth: 52 }}
     >
-      <CardFan count={player.hand.length} />
+      <CardFan count={player.hand.length} maxShow={5} />
       <PlayerAvatar name={player.name} index={playerIndex} wins={wins} isCurrentTurn={isCurrent} size="sm" />
-      <span className="text-white text-[10px] font-bold drop-shadow max-w-[60px] truncate">{player.name}</span>
-      <span className="text-white/50 text-[9px]">{player.hand.length} cards</span>
+      <span className="text-white text-[9px] font-bold drop-shadow max-w-[56px] truncate">{player.name}</span>
     </motion.div>
   );
 }
 
-// ─── Compact side opponent (no fan — fits in narrow column) ───────────────────
-function SideSlot({
-  player, wins, isCurrent, playerIndex,
-}: {
-  player: { id: string; name: string; hand: Card[] };
-  wins: number; isCurrent: boolean; playerIndex: number;
-}) {
-  return (
-    <motion.div
-      animate={isCurrent ? { scale: 1.05 } : { scale: 1 }}
-      transition={{ type: 'spring', stiffness: 300, damping: 22 }}
-      className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-xl w-full
-        ${isCurrent ? 'bg-white/15 ring-2 ring-white/40' : 'bg-black/20'}`}
-    >
-      <PlayerAvatar name={player.name} index={playerIndex} wins={wins} isCurrentTurn={isCurrent} size="sm" />
-      <span className="text-white text-[9px] font-bold drop-shadow w-full text-center truncate">{player.name}</span>
-      <span className="text-white/50 text-[9px]">{player.hand.length} 🂠</span>
-    </motion.div>
+// ─── Spread n opponents evenly on an arc centred at the top (0°) ──────────────
+// Angles in degrees: 0=top (12 o'clock), clockwise positive.
+// Arc width grows with player count so few players land near left/right,
+// many players spread all the way round to the lower sides.
+function getOpponentAngles(n: number): number[] {
+  if (n === 0) return [];
+  if (n === 1) return [0];
+  const arcDeg = Math.min(180 + (n - 2) * 24, 300);
+  const startDeg = -arcDeg / 2;
+  return Array.from({ length: n }, (_, i) =>
+    ((startDeg + (i * arcDeg) / (n - 1)) + 360) % 360,
   );
 }
 
@@ -210,49 +203,36 @@ export default function GamePage() {
   const myIndex = game.playerOrder.indexOf(myId);
   const me = game.players[myId];
 
-  // Rotate playerOrder so *my* seat is index 0 — this makes opponent positions
-  // consistent across all screens (everyone agrees who sits left/right/top).
-  // opponents[0] = next player in turn order (seat to my right visually)
-  // opponents[n-1] = previous player (seat to my left)
-  // opponents[middle] = across (top)
+  // Rotate so my seat is index 0; opponents are in clockwise turn order from me.
   const opponents = myIndex >= 0
     ? [...game.playerOrder.slice(myIndex + 1), ...game.playerOrder.slice(0, myIndex)]
     : game.playerOrder.filter(id => id !== myId);
-  const n = opponents.length;
-
-  // Distribute opponents around the table.
-  // opponents[0]   = next player  → right side
-  // opponents[n-1] = prev player  → left side
-  // middle         = across/top strip
-  // For 5+ opponents, put 2 on each side so the top strip stays manageable.
-  let topOpponentIds: string[];
-  let leftOpponentIds: string[] = [];
-  let rightOpponentIds: string[] = [];
-
-  if (n === 0) {
-    topOpponentIds = [];
-  } else if (n === 1) {
-    topOpponentIds = [opponents[0]];
-  } else if (n === 2) {
-    rightOpponentIds = [opponents[0]];
-    leftOpponentIds = [opponents[1]];
-    topOpponentIds = [];
-  } else if (n <= 4) {
-    // 3–4 opponents: 1 per side, rest at top
-    rightOpponentIds = [opponents[0]];
-    leftOpponentIds = [opponents[n - 1]];
-    topOpponentIds = opponents.slice(1, n - 1);
-  } else {
-    // 5–7 opponents: 2 per side, rest at top
-    rightOpponentIds = [opponents[0], opponents[1]];
-    leftOpponentIds = [opponents[n - 2], opponents[n - 1]];
-    topOpponentIds = opponents.slice(2, n - 2);
-  }
 
   const nextPlayerIndex = (game.currentPlayerIndex + game.direction + game.playerOrder.length) % game.playerOrder.length;
   const nextPlayerId = game.playerOrder[nextPlayerIndex];
   const nextPlayerName = game.players[nextPlayerId]?.name ?? '...';
   const currentPlayerName = game.players[currentPlayerId]?.name ?? '...';
+
+  // Table area dimensions (measured via ResizeObserver)
+  const tableRef = useRef<HTMLDivElement>(null);
+  const [tableDims, setTableDims] = useState({ w: 390, h: 400 });
+  useEffect(() => {
+    const el = tableRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver(([entry]) => {
+      setTableDims({ w: entry.contentRect.width, h: entry.contentRect.height });
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  // Ellipse radii for opponent ring — leave room for slot height/width
+  const cx = tableDims.w / 2;
+  const cy = tableDims.h / 2;
+  const rx = Math.max(tableDims.w / 2 - 68, 80);
+  const ry = Math.max(tableDims.h / 2 - 72, 80);
+
+  const opponentAngles = getOpponentAngles(opponents.length);
 
   const colorDotStyle: React.CSSProperties = {
     width: 14, height: 14, borderRadius: '50%',
@@ -261,7 +241,6 @@ export default function GamePage() {
     flexShrink: 0,
   };
 
-  // Hand layout: 2 rows when 8+ cards
   const twoRowHand = myHand.length >= 8;
 
   return (
@@ -303,43 +282,26 @@ export default function GamePage() {
         )}
       </AnimatePresence>
 
-      {/* ── Top opponents strip ──────────────────────────────── */}
-      <div className="flex-shrink-0 pt-2 pb-1">
-        <div className="overflow-x-auto scrollbar-hide px-3">
-          <div className="flex gap-2 justify-center min-w-max mx-auto">
-            {topOpponentIds.map(id => (
-              <OpponentSlot
-                key={id}
-                player={game.players[id]}
-                wins={stats[id]?.wins ?? 0}
-                isCurrent={id === currentPlayerId}
-                playerIndex={game.playerOrder.indexOf(id)}
-              />
-            ))}
-          </div>
-        </div>
-      </div>
+      {/* ── Round table area ─────────────────────────────────── */}
+      <div ref={tableRef} className="flex-1 relative min-h-0">
 
-      {/* ── Middle section: left | center | right ────────────── */}
-      <div className="flex-1 flex items-center min-h-0 px-1 gap-1">
+        {/* Oval felt surface */}
+        <div style={{
+          position: 'absolute',
+          left: '50%', top: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: rx * 2 * 0.82,
+          height: ry * 2 * 0.82,
+          borderRadius: '50%',
+          background: 'radial-gradient(ellipse at 40% 35%, rgba(0,0,0,0.18) 0%, rgba(0,0,0,0.45) 100%)',
+          border: '2.5px solid rgba(255,255,255,0.12)',
+          boxShadow: 'inset 0 0 48px rgba(0,0,0,0.35), 0 0 0 1px rgba(255,255,255,0.06)',
+          pointerEvents: 'none',
+        }} />
 
-        {/* Left opponents */}
-        <div className="flex flex-col items-center justify-center gap-2 flex-shrink-0 w-[68px]">
-          {leftOpponentIds.map(id => (
-            <SideSlot
-              key={id}
-              player={game.players[id]}
-              wins={stats[id]?.wins ?? 0}
-              isCurrent={id === currentPlayerId}
-              playerIndex={game.playerOrder.indexOf(id)}
-            />
-          ))}
-        </div>
-
-        {/* Center table */}
-        <div className="flex-1 flex flex-col items-center justify-center gap-2 min-w-0">
+        {/* Center: draw + discard + turn info */}
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
           <div className="flex items-center gap-5">
-
             {/* Draw pile */}
             <button
               onClick={isMyTurn ? handleDraw : undefined}
@@ -383,11 +345,7 @@ export default function GamePage() {
                   animate={{ scale: 1, rotate: 0, opacity: 1 }}
                   transition={{ type: 'spring', stiffness: 400, damping: 22 }}
                 >
-                  <PlayingCard
-                    card={topCard}
-                    size="md"
-                    chosenColor={topCard.type === 'wild8' ? game.currentColor : undefined}
-                  />
+                  <PlayingCard card={topCard} size="md" chosenColor={topCard.type === 'wild8' ? game.currentColor : undefined} />
                 </motion.div>
               ) : (
                 <div style={{ width: 72, height: 104, borderRadius: 10, border: '2px dashed rgba(255,255,255,0.4)' }} />
@@ -395,50 +353,60 @@ export default function GamePage() {
             </div>
           </div>
 
-          {/* Turn flow: previous → next */}
-          <div className="flex flex-col items-center gap-1.5">
-            {/* Player flow arrow */}
-            <motion.div
-              key={`${currentPlayerId}-${nextPlayerId}`}
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
-              className="bg-black/30 backdrop-blur-sm rounded-full px-3 py-1.5 flex items-center gap-1.5"
-            >
-              <span className={`text-[11px] font-black truncate max-w-[60px] ${currentPlayerId === myId ? 'text-yellow-300' : 'text-white'}`}>
-                {currentPlayerId === myId ? 'You' : currentPlayerName}
-              </span>
-              <span className="text-white/60 text-xs">→</span>
-              <span className={`text-[11px] font-black truncate max-w-[60px] ${nextPlayerId === myId ? 'text-yellow-300' : 'text-white/80'}`}>
-                {nextPlayerId === myId ? 'You' : nextPlayerName}
-              </span>
-            </motion.div>
+          {/* Turn flow arrow */}
+          <motion.div
+            key={`${currentPlayerId}-${nextPlayerId}`}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+            className="bg-black/30 backdrop-blur-sm rounded-full px-3 py-1.5 flex items-center gap-1.5"
+          >
+            <span className={`text-[11px] font-black truncate max-w-[60px] ${currentPlayerId === myId ? 'text-yellow-300' : 'text-white'}`}>
+              {currentPlayerId === myId ? 'You' : currentPlayerName}
+            </span>
+            <span className="text-white/60 text-xs">→</span>
+            <span className={`text-[11px] font-black truncate max-w-[60px] ${nextPlayerId === myId ? 'text-yellow-300' : 'text-white/80'}`}>
+              {nextPlayerId === myId ? 'You' : nextPlayerName}
+            </span>
+          </motion.div>
 
-            {/* Turn pill */}
-            <div className={`rounded-full px-4 py-1.5 text-xs font-bold text-center max-w-[200px]
-              ${isMyTurn ? 'bg-white text-gray-900 shadow-lg' : 'bg-black/40 text-white/80'}`}
-            >
-              {isMyTurn
-                ? game.pendingDraw > 0 ? `Draw +${game.pendingDraw} or stack a +2` : 'Your turn'
-                : `${game.players[currentPlayerId]?.name ?? '...'}'s turn`}
-            </div>
+          {/* Turn pill */}
+          <div className={`rounded-full px-4 py-1.5 text-xs font-bold text-center max-w-[200px]
+            ${isMyTurn ? 'bg-white text-gray-900 shadow-lg' : 'bg-black/40 text-white/80'}`}>
+            {isMyTurn
+              ? game.pendingDraw > 0 ? `Draw +${game.pendingDraw} or stack a +2` : 'Your turn'
+              : `${game.players[currentPlayerId]?.name ?? '...'}'s turn`}
           </div>
 
           {error && <p className="text-red-300 text-[11px] text-center">{error}</p>}
         </div>
 
-        {/* Right opponents */}
-        <div className="flex flex-col items-center justify-center gap-2 flex-shrink-0 w-[68px]">
-          {rightOpponentIds.map(id => (
-            <SideSlot
+        {/* Opponents around the ellipse */}
+        {opponents.map((id, i) => {
+          const angleDeg = opponentAngles[i];
+          const angleRad = (angleDeg * Math.PI) / 180;
+          const x = cx + rx * Math.sin(angleRad);
+          const y = cy - ry * Math.cos(angleRad);
+          return (
+            <div
               key={id}
-              player={game.players[id]}
-              wins={stats[id]?.wins ?? 0}
-              isCurrent={id === currentPlayerId}
-              playerIndex={game.playerOrder.indexOf(id)}
-            />
-          ))}
-        </div>
+              style={{
+                position: 'absolute',
+                left: x,
+                top: y,
+                transform: 'translate(-50%, -50%)',
+                zIndex: 10,
+              }}
+            >
+              <TableOpponent
+                player={game.players[id]}
+                wins={stats[id]?.wins ?? 0}
+                isCurrent={id === currentPlayerId}
+                playerIndex={game.playerOrder.indexOf(id)}
+              />
+            </div>
+          );
+        })}
       </div>
 
       {/* ── My area ─────────────────────────────────────────── */}
@@ -457,42 +425,18 @@ export default function GamePage() {
           </div>
         </div>
 
-        {/* Hand — 1 row normally, 2 rows when 8+ cards */}
+        {/* Hand */}
         <div className="overflow-x-auto scrollbar-hide px-3" onClick={e => e.stopPropagation()}>
           {twoRowHand ? (
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateRows: 'repeat(2, auto)',
-                gridAutoFlow: 'column',
-                gap: 6,
-                paddingTop: 32,
-                paddingBottom: 12,
-                width: 'max-content',
-              }}
-            >
+            <div style={{ display: 'grid', gridTemplateRows: 'repeat(2, auto)', gridAutoFlow: 'column', gap: 6, paddingTop: 32, paddingBottom: 12, width: 'max-content' }}>
               {myHand.map(card => (
-                <PlayingCard
-                  key={card.id}
-                  card={card}
-                  playable={playableSet.has(card.id)}
-                  selected={selectedCardId === card.id}
-                  onClick={() => handleCardTap(card)}
-                  size="md"
-                />
+                <PlayingCard key={card.id} card={card} playable={playableSet.has(card.id)} selected={selectedCardId === card.id} onClick={() => handleCardTap(card)} size="md" />
               ))}
             </div>
           ) : (
             <div className="flex min-w-max pb-3" style={{ gap: 6, paddingTop: 32 }}>
               {myHand.map(card => (
-                <PlayingCard
-                  key={card.id}
-                  card={card}
-                  playable={playableSet.has(card.id)}
-                  selected={selectedCardId === card.id}
-                  onClick={() => handleCardTap(card)}
-                  size="md"
-                />
+                <PlayingCard key={card.id} card={card} playable={playableSet.has(card.id)} selected={selectedCardId === card.id} onClick={() => handleCardTap(card)} size="md" />
               ))}
             </div>
           )}

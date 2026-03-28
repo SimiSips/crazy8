@@ -33,10 +33,11 @@ function cardCenter(card: Card): string {
 interface CardFanProps {
   count: number;
   direction?: 'horizontal' | 'vertical';
+  maxShow?: number;
 }
 
-export function CardFan({ count, direction = 'horizontal' }: CardFanProps) {
-  const show = Math.min(count, 9);
+export function CardFan({ count, direction = 'horizontal', maxShow = 9 }: CardFanProps) {
+  const show = Math.min(count, maxShow);
   const W = 46;
   const H = 66;
   const offset = direction === 'horizontal' ? 13 : 10;
