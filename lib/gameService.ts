@@ -60,6 +60,25 @@ export async function joinGame(gameId: string, playerId: string, playerName: str
   });
 }
 
+export async function removePlayer(gameId: string, hostId: string, targetId: string): Promise<void> {
+  await runTransaction(db, async (tx) => {
+    const ref = doc(db, 'games', gameId);
+    const snap = await tx.get(ref);
+    if (!snap.exists()) throw new Error('Game not found');
+    const state = snap.data() as GameState;
+    if (!state.players[hostId]?.isHost) throw new Error('Only the host can remove players');
+    if (state.status !== 'lobby') throw new Error('Cannot remove players once the game has started');
+    if (targetId === hostId) throw new Error('Cannot remove yourself');
+
+    const { [targetId]: removed, ...remainingPlayers } = state.players;
+    tx.update(ref, {
+      players: remainingPlayers,
+      playerOrder: state.playerOrder.filter(id => id !== targetId),
+      lastAction: `${removed?.name ?? 'Player'} was removed from the lobby`,
+    });
+  });
+}
+
 export async function startGame(gameId: string): Promise<void> {
   await runTransaction(db, async (tx) => {
     const ref = doc(db, 'games', gameId);

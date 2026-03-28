@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { subscribeToGame, startGame } from '@/lib/gameService';
+import { subscribeToGame, startGame, removePlayer } from '@/lib/gameService';
 import { fetchAllStats, type PlayerStats } from '@/lib/playerStats';
 import { PlayerAvatar } from '@/components/PlayerAvatar';
 import type { GameState } from '@/lib/types';
@@ -34,6 +34,11 @@ export default function LobbyPage() {
   useEffect(() => {
     fetchAllStats().then(setStats).catch(() => {});
   }, [game?.playerOrder.length]);
+
+  async function handleRemove(targetId: string) {
+    try { await removePlayer(gameId, myId, targetId); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Failed to remove player'); }
+  }
 
   async function handleStart() {
     setStarting(true); setError('');
@@ -113,7 +118,15 @@ export default function LobbyPage() {
                       {wins > 0 ? ` · ${wins} win${wins > 1 ? 's' : ''}` : ''}
                     </p>
                   </div>
-                  <div className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" />
+                  {isHost && !isMe && (
+                    <button
+                      onClick={() => handleRemove(player.id)}
+                      className="text-red-500 text-xs font-bold px-2 py-1 rounded-lg hover:bg-red-500/10 active:scale-95 transition-transform flex-shrink-0"
+                    >
+                      ✕
+                    </button>
+                  )}
+                  {(!isHost || isMe) && <div className="w-2 h-2 rounded-full bg-green-400 flex-shrink-0" />}
                 </motion.div>
               );
             })}
