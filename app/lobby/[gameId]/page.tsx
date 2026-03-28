@@ -65,11 +65,11 @@ export default function LobbyPage() {
 
   return (
     <div
-      className="h-full flex flex-col items-center justify-between px-5"
+      className="h-full flex flex-col items-center px-5"
       style={{ background: 'linear-gradient(160deg, #0a0a0a 0%, #111827 60%, #0a0a0a 100%)' }}
     >
-      {/* Room code */}
-      <div className="w-full max-w-sm pt-12">
+      {/* Room code — pinned at top */}
+      <div className="w-full max-w-sm pt-12 flex-shrink-0">
         <p className="text-gray-400 text-sm text-center mb-1">Room Code</p>
         <motion.button whileTap={{ scale: 0.97 }} onClick={copyCode} className="w-full">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl py-4 px-5 text-center mb-1">
@@ -81,12 +81,12 @@ export default function LobbyPage() {
         </motion.button>
       </div>
 
-      {/* Player list */}
-      <div className="w-full max-w-sm flex-1 mt-8">
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+      {/* Player list — scrollable middle */}
+      <div className="w-full max-w-sm flex-1 mt-8 min-h-0 flex flex-col">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 flex-shrink-0">
           Players ({playerList.length}/8)
         </p>
-        <div className="space-y-2">
+        <div className="overflow-y-auto flex-1 space-y-2 pr-0.5">
           <AnimatePresence>
             {playerList.map((player) => {
               const wins = stats[player.id]?.wins ?? 0;
@@ -118,17 +118,17 @@ export default function LobbyPage() {
               );
             })}
           </AnimatePresence>
-        </div>
 
-        {playerList.length < 2 && (
-          <p className="text-gray-600 text-sm text-center mt-6">
-            Waiting for at least 1 more player…
-          </p>
-        )}
+          {playerList.length < 2 && (
+            <p className="text-gray-600 text-sm text-center mt-6">
+              Waiting for at least 1 more player…
+            </p>
+          )}
+        </div>
       </div>
 
-      {/* Bottom actions */}
-      <div className="w-full max-w-sm pb-10">
+      {/* Bottom actions — pinned at bottom */}
+      <div className="w-full max-w-sm pb-10 pt-4 flex-shrink-0">
         {error && <p className="text-red-400 text-sm text-center mb-3">{error}</p>}
         {isHost ? (
           <button
