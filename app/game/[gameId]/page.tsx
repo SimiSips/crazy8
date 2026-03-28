@@ -147,6 +147,7 @@ export default function GamePage() {
     const iWon = game.winner === myId;
     const winnerIndex = game.playerOrder.indexOf(game.winner ?? '');
     const winnerWins = stats[game.winner ?? '']?.wins ?? 0;
+    const winningCard = game.discardPile[game.discardPile.length - 1] ?? null;
 
     return (
       <div className="h-full flex flex-col items-center justify-center px-5" style={TABLE_BG}>
@@ -163,6 +164,26 @@ export default function GamePage() {
           <h1 className="text-3xl font-black text-white mb-1">
             {iWon ? 'You Win!' : `${winner?.name ?? '?'} Wins!`}
           </h1>
+
+          {/* Winning card */}
+          {winningCard && (
+            <div className="flex flex-col items-center gap-1.5 my-4">
+              <span className="text-white/60 text-xs font-semibold uppercase tracking-wider">
+                {iWon ? 'You played' : `${winner?.name ?? '?'} played`}
+              </span>
+              <motion.div
+                initial={{ y: -20, rotate: -12, opacity: 0 }}
+                animate={{ y: 0, rotate: 0, opacity: 1 }}
+                transition={{ type: 'spring', stiffness: 280, damping: 18, delay: 0.15 }}
+              >
+                <PlayingCard
+                  card={winningCard}
+                  size="md"
+                  chosenColor={winningCard.type === 'wild8' ? game.currentColor : undefined}
+                />
+              </motion.div>
+            </div>
+          )}
           {winnerWins > 0 && (
             <p className="text-yellow-300 font-bold mb-1 text-sm">
               {winnerWins} total win{winnerWins > 1 ? 's' : ''} 🏆
