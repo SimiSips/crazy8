@@ -15,39 +15,45 @@ const TABLE_BG: React.CSSProperties = {
   background: 'radial-gradient(ellipse at 45% 35%, #dc2626 0%, #b91c1c 45%, #991b1b 80%, #7f1d1d 100%)',
 };
 
-// ─── Single opponent card in the top strip ────────────────────────────────────
+// ─── Opponent in the top strip ────────────────────────────────────────────────
 function OpponentSlot({
-  player,
-  wins,
-  isCurrent,
-  playerIndex,
-  compact = false,
+  player, wins, isCurrent, playerIndex,
 }: {
   player: { id: string; name: string; hand: Card[] };
-  wins: number;
-  isCurrent: boolean;
-  playerIndex: number;
-  compact?: boolean;
+  wins: number; isCurrent: boolean; playerIndex: number;
 }) {
   return (
     <motion.div
-      animate={isCurrent ? { scale: 1.06, y: compact ? 0 : -2 } : { scale: 1, y: 0 }}
+      animate={isCurrent ? { scale: 1.06, y: -2 } : { scale: 1, y: 0 }}
       transition={{ type: 'spring', stiffness: 300, damping: 22 }}
       className={`flex flex-col items-center gap-1 px-2 py-2 rounded-2xl flex-shrink-0
         ${isCurrent ? 'bg-white/15 ring-2 ring-white/40' : 'bg-black/20'}`}
     >
-      <CardFan count={player.hand.length} direction={compact ? 'vertical' : 'horizontal'} />
-      <PlayerAvatar
-        name={player.name}
-        index={playerIndex}
-        wins={wins}
-        isCurrentTurn={isCurrent}
-        size="sm"
-      />
-      <span className="text-white text-[10px] font-bold drop-shadow max-w-[60px] truncate">
-        {player.name}
-      </span>
-      {!compact && <span className="text-white/50 text-[9px]">{player.hand.length} cards</span>}
+      <CardFan count={player.hand.length} />
+      <PlayerAvatar name={player.name} index={playerIndex} wins={wins} isCurrentTurn={isCurrent} size="sm" />
+      <span className="text-white text-[10px] font-bold drop-shadow max-w-[60px] truncate">{player.name}</span>
+      <span className="text-white/50 text-[9px]">{player.hand.length} cards</span>
+    </motion.div>
+  );
+}
+
+// ─── Compact side opponent (no fan — fits in narrow column) ───────────────────
+function SideSlot({
+  player, wins, isCurrent, playerIndex,
+}: {
+  player: { id: string; name: string; hand: Card[] };
+  wins: number; isCurrent: boolean; playerIndex: number;
+}) {
+  return (
+    <motion.div
+      animate={isCurrent ? { scale: 1.05 } : { scale: 1 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+      className={`flex flex-col items-center gap-0.5 px-1.5 py-1.5 rounded-xl w-full
+        ${isCurrent ? 'bg-white/15 ring-2 ring-white/40' : 'bg-black/20'}`}
+    >
+      <PlayerAvatar name={player.name} index={playerIndex} wins={wins} isCurrentTurn={isCurrent} size="sm" />
+      <span className="text-white text-[9px] font-bold drop-shadow w-full text-center truncate">{player.name}</span>
+      <span className="text-white/50 text-[9px]">{player.hand.length} 🂠</span>
     </motion.div>
   );
 }
@@ -214,24 +220,33 @@ export default function GamePage() {
     : game.playerOrder.filter(id => id !== myId);
   const n = opponents.length;
 
+  // Distribute opponents around the table.
+  // opponents[0]   = next player  → right side
+  // opponents[n-1] = prev player  → left side
+  // middle         = across/top strip
+  // For 5+ opponents, put 2 on each side so the top strip stays manageable.
   let topOpponentIds: string[];
-  let leftOpponentId: string | null = null;
-  let rightOpponentId: string | null = null;
+  let leftOpponentIds: string[] = [];
+  let rightOpponentIds: string[] = [];
 
   if (n === 0) {
     topOpponentIds = [];
   } else if (n === 1) {
     topOpponentIds = [opponents[0]];
   } else if (n === 2) {
-    // 3-player: next on right, prev on left, nothing at top
-    rightOpponentId = opponents[0];
-    leftOpponentId = opponents[1];
+    rightOpponentIds = [opponents[0]];
+    leftOpponentIds = [opponents[1]];
     topOpponentIds = [];
-  } else {
-    // 4+ players: next=right, prev=left, middle seats=top strip
-    rightOpponentId = opponents[0];
-    leftOpponentId = opponents[n - 1];
+  } else if (n <= 4) {
+    // 3–4 opponents: 1 per side, rest at top
+    rightOpponentIds = [opponents[0]];
+    leftOpponentIds = [opponents[n - 1]];
     topOpponentIds = opponents.slice(1, n - 1);
+  } else {
+    // 5–7 opponents: 2 per side, rest at top
+    rightOpponentIds = [opponents[0], opponents[1]];
+    leftOpponentIds = [opponents[n - 2], opponents[n - 1]];
+    topOpponentIds = opponents.slice(2, n - 2);
   }
 
   const nextPlayerIndex = (game.currentPlayerIndex + game.direction + game.playerOrder.length) % game.playerOrder.length;
@@ -308,17 +323,17 @@ export default function GamePage() {
       {/* ── Middle section: left | center | right ────────────── */}
       <div className="flex-1 flex items-center min-h-0 px-1 gap-1">
 
-        {/* Left opponent */}
-        <div className="flex flex-col items-center justify-center flex-shrink-0 w-16">
-          {leftOpponentId && (
-            <OpponentSlot
-              player={game.players[leftOpponentId]}
-              wins={stats[leftOpponentId]?.wins ?? 0}
-              isCurrent={leftOpponentId === currentPlayerId}
-              playerIndex={game.playerOrder.indexOf(leftOpponentId)}
-              compact
+        {/* Left opponents */}
+        <div className="flex flex-col items-center justify-center gap-2 flex-shrink-0 w-[68px]">
+          {leftOpponentIds.map(id => (
+            <SideSlot
+              key={id}
+              player={game.players[id]}
+              wins={stats[id]?.wins ?? 0}
+              isCurrent={id === currentPlayerId}
+              playerIndex={game.playerOrder.indexOf(id)}
             />
-          )}
+          ))}
         </div>
 
         {/* Center table */}
@@ -412,17 +427,17 @@ export default function GamePage() {
           {error && <p className="text-red-300 text-[11px] text-center">{error}</p>}
         </div>
 
-        {/* Right opponent */}
-        <div className="flex flex-col items-center justify-center flex-shrink-0 w-16">
-          {rightOpponentId && (
-            <OpponentSlot
-              player={game.players[rightOpponentId]}
-              wins={stats[rightOpponentId]?.wins ?? 0}
-              isCurrent={rightOpponentId === currentPlayerId}
-              playerIndex={game.playerOrder.indexOf(rightOpponentId)}
-              compact
+        {/* Right opponents */}
+        <div className="flex flex-col items-center justify-center gap-2 flex-shrink-0 w-[68px]">
+          {rightOpponentIds.map(id => (
+            <SideSlot
+              key={id}
+              player={game.players[id]}
+              wins={stats[id]?.wins ?? 0}
+              isCurrent={id === currentPlayerId}
+              playerIndex={game.playerOrder.indexOf(id)}
             />
-          )}
+          ))}
         </div>
       </div>
 
