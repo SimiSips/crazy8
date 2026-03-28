@@ -29,6 +29,7 @@ export interface GameState {
   currentColor: Color;
   pendingDraw: number;
   winner: string | null;
+  lastSkippedId: string | null;
   createdAt: number;
   lastAction: string;
 }

@@ -32,6 +32,7 @@ export async function createGame(hostId: string, hostName: string): Promise<stri
     currentColor: 'red',
     pendingDraw: 0,
     winner: null,
+    lastSkippedId: null,
     createdAt: Date.now(),
     lastAction: `${hostName} created the game`,
   };
@@ -163,6 +164,13 @@ export async function playCard(
     const colorLabel = card.type === 'wild8' ? ` → ${effects.currentColor}` : '';
     const actionLabel = buildActionLabel(card, player.name) + colorLabel;
 
+    // Determine who gets skipped so the UI can show a visual indicator
+    const isSkipEffect = card.type === 'skip' ||
+      (card.type === 'reverse' && state.playerOrder.length === 2);
+    const lastSkippedId = isSkipEffect
+      ? state.playerOrder[advanceTurn(state.currentPlayerIndex, state.playerOrder.length, state.direction, 1)]
+      : null;
+
     const updates: Record<string, unknown> = {
       [`players.${playerId}.hand`]: newHand,
       discardPile: [...state.discardPile, card],
@@ -171,6 +179,7 @@ export async function playCard(
       currentColor: effects.currentColor,
       pendingDraw: effects.pendingDraw,
       lastAction: actionLabel,
+      lastSkippedId,
     };
 
     if (newHand.length === 0) {
@@ -265,6 +274,7 @@ export async function resetGame(gameId: string): Promise<void> {
       direction: 1,
       pendingDraw: 0,
       winner: null,
+      lastSkippedId: null,
       lastAction: 'Ready for another round!',
     });
   });

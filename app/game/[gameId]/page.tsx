@@ -16,18 +16,17 @@ const TABLE_BG: React.CSSProperties = {
 };
 
 // ─── Opponent slot placed around the round table ──────────────────────────────
-// Kept compact (no card fan) so it never overlaps the felt oval.
 function TableOpponent({
-  player, wins, isCurrent, playerIndex,
+  player, wins, isCurrent, playerIndex, isSkipped,
 }: {
   player: { id: string; name: string; hand: Card[] };
-  wins: number; isCurrent: boolean; playerIndex: number;
+  wins: number; isCurrent: boolean; playerIndex: number; isSkipped: boolean;
 }) {
   return (
     <motion.div
       animate={isCurrent ? { scale: 1.1 } : { scale: 1 }}
       transition={{ type: 'spring', stiffness: 300, damping: 22 }}
-      className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-2xl
+      className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-2xl relative
         ${isCurrent ? 'bg-white/15 ring-2 ring-white/40' : 'bg-black/25'}`}
       style={{ width: 56 }}
     >
@@ -38,6 +37,27 @@ function TableOpponent({
       <span className="text-white/60 text-[9px] font-semibold leading-tight">
         {player.hand.length} cards
       </span>
+
+      {/* Skip overlay */}
+      <AnimatePresence>
+        {isSkipped && (
+          <motion.div
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+            style={{
+              position: 'absolute', inset: 0,
+              borderRadius: 16,
+              background: 'rgba(220,38,38,0.55)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              border: '2px solid #ef4444',
+            }}
+          >
+            <span style={{ color: '#fff', fontSize: 22, fontWeight: 900, lineHeight: 1 }}>✕</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
@@ -67,6 +87,7 @@ export default function GamePage() {
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [error, setError] = useState('');
   const [actionMsg, setActionMsg] = useState('');
+  const [skippedPlayerId, setSkippedPlayerId] = useState<string | null>(null);
 
   useEffect(() => {
     setMyId(localStorage.getItem('crazy8_playerId') ?? '');
@@ -89,6 +110,14 @@ export default function GamePage() {
     const t = setTimeout(() => setActionMsg(''), 3000);
     return () => clearTimeout(t);
   }, [game?.lastAction]);
+
+  // Show skip overlay on the affected player for 1.8 s
+  useEffect(() => {
+    if (!game?.lastSkippedId) return;
+    setSkippedPlayerId(game.lastSkippedId);
+    const t = setTimeout(() => setSkippedPlayerId(null), 1800);
+    return () => clearTimeout(t);
+  }, [game?.lastSkippedId]);
 
   // When host resets the game, redirect all players back to the lobby
   useEffect(() => {
@@ -434,6 +463,7 @@ export default function GamePage() {
                 wins={stats[id]?.wins ?? 0}
                 isCurrent={id === currentPlayerId}
                 playerIndex={game.playerOrder.indexOf(id)}
+                isSkipped={id === skippedPlayerId}
               />
             </div>
           );
@@ -443,7 +473,7 @@ export default function GamePage() {
       {/* ── My area ─────────────────────────────────────────── */}
       <div className="flex-shrink-0 pb-2">
         <div className="flex justify-center mb-1">
-          <div className="flex flex-col items-center gap-0.5">
+          <div className="flex flex-col items-center gap-0.5 relative">
             <PlayerAvatar
               name={me?.name ?? ''}
               index={myIndex}
@@ -452,6 +482,26 @@ export default function GamePage() {
               isYou
               size="sm"
             />
+            <AnimatePresence>
+              {skippedPlayerId === myId && (
+                <motion.div
+                  initial={{ scale: 0, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0, opacity: 0 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+                  style={{
+                    position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
+                    width: 34, height: 34, borderRadius: '50%',
+                    background: 'rgba(220,38,38,0.65)',
+                    border: '2px solid #ef4444',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  <span style={{ color: '#fff', fontSize: 18, fontWeight: 900, lineHeight: 1 }}>✕</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
             <span className="text-white text-[11px] font-bold drop-shadow">{me?.name}</span>
           </div>
         </div>
