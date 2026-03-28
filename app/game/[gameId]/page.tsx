@@ -92,6 +92,19 @@ export default function GamePage() {
     }
   }, [game?.status, gameId, router]);
 
+  // Table area dimensions — must be declared before any early return
+  const tableRef = useRef<HTMLDivElement>(null);
+  const [tableDims, setTableDims] = useState({ w: 390, h: 400 });
+  useEffect(() => {
+    const el = tableRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver(([entry]) => {
+      setTableDims({ w: entry.contentRect.width, h: entry.contentRect.height });
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
   const isMyTurn = game ? game.playerOrder[game.currentPlayerIndex] === myId : false;
   const myHand = game?.players[myId]?.hand ?? [];
   const topCard = game?.discardPile[game.discardPile.length - 1] ?? null;
@@ -233,19 +246,6 @@ export default function GamePage() {
   const nextPlayerId = game.playerOrder[nextPlayerIndex];
   const nextPlayerName = game.players[nextPlayerId]?.name ?? '...';
   const currentPlayerName = game.players[currentPlayerId]?.name ?? '...';
-
-  // Table area dimensions (measured via ResizeObserver)
-  const tableRef = useRef<HTMLDivElement>(null);
-  const [tableDims, setTableDims] = useState({ w: 390, h: 400 });
-  useEffect(() => {
-    const el = tableRef.current;
-    if (!el) return;
-    const obs = new ResizeObserver(([entry]) => {
-      setTableDims({ w: entry.contentRect.width, h: entry.contentRect.height });
-    });
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
 
   // Ellipse radii for opponent ring — leave room for slot height/width
   const cx = tableDims.w / 2;
