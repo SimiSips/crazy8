@@ -1,0 +1,10 @@
+{
+  "name": "CuzCrazy8",
+  "short_name": "CuzCrazy8",
+  "description": "The classic eights game, played fast with up to eight around the table",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1b1714",
+  "theme_color": "#1b1714",
+  "icons": []
+}

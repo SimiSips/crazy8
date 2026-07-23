@@ -1,93 +1,384 @@
 'use client';
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
-import { subscribeToGame, playCard, drawCard, resetGame } from '@/lib/gameService';
+import { AnimatePresence, motion } from 'framer-motion';
+import {
+  subscribeToGame,
+  playCard,
+  drawCard,
+  votePlayAgain,
+  foolishMistake,
+  missedUnoCall,
+  callOneCard,
+  catchMissedCall,
+  leaveGame,
+} from '@/lib/gameService';
 import { fetchAllStats, type PlayerStats } from '@/lib/playerStats';
 import { canPlayCard } from '@/lib/gameLogic';
-import { PlayingCard, FaceDownCard, CardFan, CARD_BG } from '@/components/PlayingCard';
-import { PlayerAvatar } from '@/components/PlayerAvatar';
-import { ColorPicker } from '@/components/ColorPicker';
-import type { GameState, Card, Color } from '@/lib/types';
+import { CardFace, CardFan, DrawDeck, CARD_COLORS } from '@/components/PlayingCard';
+import { WildPicker } from '@/components/WildPicker';
+import { PickupOverlay } from '@/components/PickupOverlay';
+import { Wordmark, Watermark8 } from '@/components/Wordmark';
+import type { GameState, Card, Color, CardLook, Player } from '@/lib/types';
 
-// ─── Felt table background style ───────────────────────────────────────────────
-const TABLE_BG: React.CSSProperties = {
-  background: 'radial-gradient(ellipse at 45% 35%, #dc2626 0%, #b91c1c 45%, #991b1b 80%, #7f1d1d 100%)',
-};
+const TURN_SECONDS = 20;
 
-// ─── Opponent slot placed around the round table ──────────────────────────────
-function TableOpponent({
-  player, wins, isCurrent, playerIndex, isSkipped,
+// "take two for your foolish mistake" — phrased for the tapper, third-person for everyone else
+function mistakeMessage(name: string, penalty: number, isSelf: boolean): string {
+  const word = penalty === 2 ? 'two' : String(penalty);
+  return isSelf ? `You take ${word} for your foolish mistake!` : `${name} takes ${word} for a foolish mistake!`;
+}
+
+// ─── Opponent seat (desktop)  ────────────
+function OpponentSeat({
+  player,
+  isCurrent,
+  isSkipped,
+  wins,
+  side,
+  catchable,
+  onCatch,
 }: {
-  player: { id: string; name: string; hand: Card[] };
-  wins: number; isCurrent: boolean; playerIndex: number; isSkipped: boolean;
+  player: Player;
+  isCurrent: boolean;
+  isSkipped: boolean;
+  wins: number;
+  side: 'top' | 'left' | 'right';
+  catchable: boolean;
+  onCatch: () => void;
 }) {
-  return (
-    <motion.div
-      animate={isCurrent ? { scale: 1.1 } : { scale: 1 }}
-      transition={{ type: 'spring', stiffness: 300, damping: 22 }}
-      className={`flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-2xl relative
-        ${isCurrent ? 'bg-white/15 ring-2 ring-white/40' : 'bg-black/25'}`}
-      style={{ width: 56 }}
+  const label = (
+    <div
+      className="heading"
+      style={{
+        fontSize: 12,
+        letterSpacing: '.05em',
+        whiteSpace: 'nowrap',
+        color: isCurrent ? 'var(--color-accent)' : 'color-mix(in srgb,#f4efe7 65%,transparent)',
+        textShadow: isCurrent ? '0 0 12px color-mix(in srgb,var(--color-accent) 60%,transparent)' : 'none',
+      }}
     >
-      <PlayerAvatar name={player.name} index={playerIndex} wins={wins} isCurrentTurn={isCurrent} size="sm" />
-      <span className="text-white text-[9px] font-bold w-full text-center truncate leading-tight">
-        {player.name}
-      </span>
-      <span className="text-white/60 text-[9px] font-semibold leading-tight">
-        {player.hand.length} cards
-      </span>
+      {player.name.toUpperCase()} · {player.hand.length}
+      <span style={{ color: 'var(--color-gold)' }}> {wins > 0 ? `★${wins}` : '★'}</span>
+      {isSkipped && <span style={{ color: 'var(--color-accent)' }}> · ⊘</span>}
+      {catchable && <span style={{ color: 'var(--color-accent)' }}> · ASK?</span>}
+    </div>
+  );
 
-      {/* Skip overlay */}
+  const fan = (
+    <CardFan
+      count={player.hand.length}
+      direction={side === 'top' ? 'horizontal' : 'vertical'}
+      w={side === 'top' ? 44 : 54}
+      h={side === 'top' ? 64 : 78}
+    />
+  );
+
+  const stack = (
+    <div style={{ position: 'relative' }}>
+      {catchable ? (
+        <motion.button
+          type="button"
+          onClick={onCatch}
+          animate={{ scale: [1, 1.06, 1] }}
+          transition={{ duration: 0.9, repeat: Infinity, ease: 'easeInOut' }}
+          aria-label={`Ask ${player.name} how many cards`}
+          style={{
+            border: 0,
+            padding: 2,
+            background: 'none',
+            cursor: 'pointer',
+            borderRadius: 10,
+            boxShadow: '0 0 0 2px var(--color-accent), 0 0 16px color-mix(in srgb,var(--color-accent) 55%,transparent)',
+          }}
+        >
+          {fan}
+        </motion.button>
+      ) : (
+        fan
+      )}
       <AnimatePresence>
         {isSkipped && (
           <motion.div
             initial={{ scale: 0, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 20 }}
             style={{
-              position: 'absolute', inset: 0,
-              borderRadius: 16,
-              background: 'rgba(220,38,38,0.55)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              border: '2px solid #ef4444',
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 20,
             }}
           >
-            <span style={{ color: '#fff', fontSize: 22, fontWeight: 900, lineHeight: 1 }}>✕</span>
+            <span
+              className="heading"
+              style={{
+                color: 'var(--color-accent)',
+                fontSize: 34,
+                textShadow: '0 2px 8px rgba(0,0,0,.6)',
+              }}
+            >
+              ✕
+            </span>
           </motion.div>
         )}
       </AnimatePresence>
-    </motion.div>
+    </div>
+  );
+
+  if (side === 'top') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+        {stack}
+        {label}
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      {side === 'left' && label}
+      {stack}
+      {side === 'right' && label}
+    </div>
   );
 }
 
-// ─── Spread n opponents evenly on an arc centred at the top (0°) ──────────────
-// Angles in degrees: 0=top (12 o'clock), clockwise positive.
-// Arc width grows with player count so few players land near left/right,
-// many players spread all the way round to the lower sides.
-function getOpponentAngles(n: number): number[] {
-  if (n === 0) return [];
-  if (n === 1) return [0];
-  const arcDeg = Math.min(180 + (n - 2) * 24, 300);
-  const startDeg = -arcDeg / 2;
-  return Array.from({ length: n }, (_, i) =>
-    ((startDeg + (i * arcDeg) / (n - 1)) + 360) % 360,
+// ─── Opponent chip (mobile) ───────────────────────────────────────────────────
+function OppChip({
+  player,
+  isCurrent,
+  isSkipped,
+  catchable,
+  onCatch,
+}: {
+  player: Player;
+  isCurrent: boolean;
+  isSkipped: boolean;
+  catchable: boolean;
+  onCatch: () => void;
+}) {
+  const chipStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 7,
+    padding: '7px 10px',
+    background: 'rgba(0,0,0,.32)',
+    border: isCurrent || catchable ? '1.5px solid var(--color-accent)' : '1px solid rgba(248,244,244,.18)',
+    borderRadius: 14,
+    color: '#f4efe7',
+    cursor: catchable ? 'pointer' : 'default',
+    boxShadow: catchable
+      ? '0 0 0 2px rgba(248,244,244,.4), 0 0 14px color-mix(in srgb,var(--color-accent) 55%,transparent)'
+      : isCurrent ? '0 0 14px color-mix(in srgb,var(--color-accent) 45%,transparent)' : 'none',
+    opacity: isSkipped ? 0.55 : 1,
+    fontFamily: 'inherit',
+  };
+
+  const content = (
+    <>
+      <div
+        style={{
+          width: 16,
+          height: 24,
+          borderRadius: 3,
+          background: '#141110',
+          backgroundImage: 'repeating-linear-gradient(45deg,#161616 0px,#161616 3px,#262626 3px,#262626 6px)',
+          border: '1px solid #333',
+          flex: 'none',
+        }}
+      />
+      <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
+        <span className="heading" style={{ fontSize: 11, maxWidth: 72, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {player.name.toUpperCase()}
+        </span>
+        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--color-gold)' }}>
+          {player.hand.length} cards
+        </span>
+      </div>
+      {isSkipped ? (
+        <span className="heading" style={{ color: 'var(--color-accent)', fontSize: 12 }}>✕</span>
+      ) : catchable ? (
+        <span className="heading" style={{ color: 'var(--color-accent)', fontSize: 9, letterSpacing: '.04em' }}>ASK?</span>
+      ) : (
+        player.hand.length === 1 && (
+          <span
+            style={{
+              background: 'var(--color-accent)',
+              color: '#fff',
+              fontSize: 8,
+              fontWeight: 800,
+              padding: '2px 5px',
+              borderRadius: 8,
+              letterSpacing: '.06em',
+            }}
+          >
+            UNO
+          </span>
+        )
+      )}
+    </>
+  );
+
+  if (catchable) {
+    return (
+      <motion.button
+        type="button"
+        onClick={onCatch}
+        aria-label={`Ask ${player.name} how many cards`}
+        animate={{ scale: [1, 1.05, 1] }}
+        transition={{ duration: 0.9, repeat: Infinity, ease: 'easeInOut' }}
+        style={chipStyle}
+      >
+        {content}
+      </motion.button>
+    );
+  }
+  return <div style={chipStyle}>{content}</div>;
+}
+
+// ─── UNO! button ──────────────────────────────────────────────────────────────
+function UnoButton({
+  armed,
+  called,
+  onClick,
+  compact,
+}: {
+  armed: boolean;
+  called: boolean;
+  onClick: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={armed ? onClick : undefined}
+      style={{
+        width: compact ? 128 : 150,
+        height: compact ? 48 : 72,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: compact ? 2 : 3,
+        flex: 'none',
+        cursor: armed ? 'pointer' : 'default',
+        borderRadius: compact ? 14 : 16,
+        border: armed || called ? 0 : `${compact ? 1.5 : 2}px solid rgba(248,244,244,.22)`,
+        background: called ? '#141110' : armed ? 'var(--color-accent)' : 'transparent',
+        color: armed || called ? '#f8f4f4' : 'rgba(248,244,244,.45)',
+        fontFamily: 'var(--font-heading)',
+        fontWeight: 800,
+        fontStyle: 'italic',
+        boxShadow: armed
+          ? compact
+            ? '0 0 0 2px rgba(248,244,244,.8), 0 6px 16px rgba(0,0,0,.4)'
+            : '0 0 0 3px rgba(248,244,244,.85), 0 0 26px color-mix(in srgb,var(--color-accent) 60%,transparent)'
+          : 'none',
+        animation: armed ? 'unopulse 1s ease-in-out infinite' : 'none',
+      }}
+    >
+      <span style={{ fontSize: compact ? 15 : 22, lineHeight: 1 }}>{called ? 'CALLED ✓' : 'ONE CARD!'}</span>
+    </button>
   );
 }
 
-// ─── Main page ─────────────────────────────────────────────────────────────────
+// ─── Hand fan ─────────────────────────────────────────────────────────────────
+function HandFan({
+  hand,
+  playableSet,
+  look,
+  onPlay,
+  w,
+  h,
+  overlap,
+  arc,
+}: {
+  hand: Card[];
+  playableSet: Set<string>;
+  look: CardLook;
+  onPlay: (card: Card) => void;
+  w: number;
+  h: number;
+  overlap: number;
+  arc: number;
+}) {
+  const n = hand.length;
+  const mid = (n - 1) / 2;
+  // Tighten overlap for very large hands so the fan stays on screen
+  const ov = n > 14 ? Math.round(w * 0.72) : overlap;
+
+  return (
+    <div
+      className="scrollbar-hide"
+      style={{
+        display: 'flex',
+        justifyContent: 'safe center',
+        alignItems: 'flex-end',
+        minHeight: h + 30,
+        overflowX: 'auto',
+        overflowY: 'visible',
+        paddingTop: 50,
+      }}
+    >
+      {hand.map((card, i) => {
+        // Every card is tappable — a tap is a play attempt. Dimming is just a
+        // hint of what's safe to play; tapping a dim card still counts (mistake rule).
+        const ok = playableSet.has(card.id);
+        const rot = (i - mid) * 3.2;
+        const lift = Math.abs(i - mid) * arc;
+        return (
+          <motion.button
+            key={card.id}
+            type="button"
+            onClick={() => onPlay(card)}
+            initial={false}
+            animate={{ rotate: rot, y: lift + (ok ? -14 : 0) }}
+            whileHover={ok ? { rotate: rot, y: -46, scale: 1.06, zIndex: 80 } : { scale: 1.03, zIndex: 80 }}
+            whileTap={{ scale: 0.94 }}
+            transition={{ type: 'spring', stiffness: 380, damping: 26 }}
+            style={{
+              marginLeft: i > 0 ? -ov : 0,
+              zIndex: i + 1,
+              transformOrigin: 'bottom center',
+              cursor: 'pointer',
+              border: 0,
+              padding: 0,
+              background: 'none',
+              opacity: ok ? 1 : 0.55,
+              filter: ok ? 'none' : 'saturate(.8)',
+              flex: '0 0 auto',
+            }}
+          >
+            <CardFace card={card} w={w} h={h} look={look} />
+          </motion.button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
 export default function GamePage() {
   const { gameId } = useParams<{ gameId: string }>();
   const router = useRouter();
   const [game, setGame] = useState<GameState | null>(null);
   const [stats, setStats] = useState<Record<string, PlayerStats>>({});
   const [myId, setMyId] = useState('');
-  const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
-  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [pendingColorId, setPendingColorId] = useState<string | null>(null);
+  const [pendingCardId, setPendingCardId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [actionMsg, setActionMsg] = useState('');
   const [skippedPlayerId, setSkippedPlayerId] = useState<string | null>(null);
+  const [unoCalled, setUnoCalled] = useState(false);
+  const [timer, setTimer] = useState(TURN_SECONDS);
+  const [pickup, setPickup] = useState<{ n: number; who: string } | null>(null);
+  const prevHandsRef = useRef<Record<string, number> | null>(null);
+  const prevStatusRef = useRef<string | null>(null);
+  const unoDeadlineRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const actionInFlightRef = useRef(false);
+  const actionMsgTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setMyId(localStorage.getItem('crazy8_playerId') ?? '');
@@ -104,14 +395,26 @@ export default function GamePage() {
     fetchAllStats().then(setStats).catch(() => {});
   }, [game?.status, game?.playerOrder.length]);
 
+  function flashMessage(msg: string) {
+    setActionMsg(msg);
+    if (actionMsgTimeoutRef.current) clearTimeout(actionMsgTimeoutRef.current);
+    actionMsgTimeoutRef.current = setTimeout(() => setActionMsg(''), 3000);
+  }
+  useEffect(() => () => { if (actionMsgTimeoutRef.current) clearTimeout(actionMsgTimeoutRef.current); }, []);
+
   useEffect(() => {
     if (!game?.lastAction) return;
-    setActionMsg(game.lastAction);
-    const t = setTimeout(() => setActionMsg(''), 3000);
-    return () => clearTimeout(t);
-  }, [game?.lastAction]);
+    if (game.lastMistakeId) {
+      const isSelf = game.lastMistakeId === myId;
+      const name = game.players[game.lastMistakeId]?.name ?? 'Someone';
+      flashMessage(mistakeMessage(name, game.lastMistakePenalty ?? 2, isSelf));
+    } else {
+      flashMessage(game.lastAction);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [game?.lastAction, game?.lastMistakeId, game?.lastMistakePenalty, myId]);
 
-  // Show skip overlay on the affected player for 1.8 s
+  // Skip indicator on the affected player
   useEffect(() => {
     if (!game?.lastSkippedId) return;
     setSkippedPlayerId(game.lastSkippedId);
@@ -119,414 +422,901 @@ export default function GamePage() {
     return () => clearTimeout(t);
   }, [game?.lastSkippedId]);
 
-  // When host resets the game, redirect all players back to the lobby
+  // When host resets the game, everyone returns to the lobby
   useEffect(() => {
-    if (game?.status === 'lobby') {
-      router.replace(`/lobby/${gameId}`);
-    }
+    if (game?.status === 'lobby') router.replace(`/lobby/${gameId}`);
   }, [game?.status, gameId, router]);
 
-  // Table area dimensions — must be declared before any early return
-  const tableRef = useRef<HTMLDivElement>(null);
-  const [tableDims, setTableDims] = useState({ w: 390, h: 400 });
+  // Pickup animation: fire when any player's hand grows mid-game
   useEffect(() => {
-    const el = tableRef.current;
-    if (!el) return;
-    const obs = new ResizeObserver(([entry]) => {
-      setTableDims({ w: entry.contentRect.width, h: entry.contentRect.height });
-    });
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
+    if (!game) return;
+    const lengths = Object.fromEntries(
+      game.playerOrder.map(id => [id, game.players[id]?.hand.length ?? 0]),
+    );
+    const prev = prevHandsRef.current;
+    const statusChanged = prevStatusRef.current !== game.status;
+    prevHandsRef.current = lengths;
+    prevStatusRef.current = game.status;
+    if (game.status !== 'playing' || !prev || statusChanged) return;
 
-  const isMyTurn = game ? game.playerOrder[game.currentPlayerIndex] === myId : false;
-  const myHand = game?.players[myId]?.hand ?? [];
+    for (const id of game.playerOrder) {
+      const grew = lengths[id] - (prev[id] ?? lengths[id]);
+      if (grew > 0) {
+        const who = id === myId ? 'YOU' : (game.players[id]?.name ?? 'PLAYER').toUpperCase();
+        setPickup({ n: grew, who });
+        const t = setTimeout(() => setPickup(null), 1500);
+        return () => clearTimeout(t);
+      }
+    }
+  }, [game, myId]);
+
+  // Cosmetic 20 s turn timer
+  const currentTurnId = game?.playerOrder[game.currentPlayerIndex] ?? null;
+  useEffect(() => {
+    setTimer(TURN_SECONDS);
+  }, [currentTurnId]);
+  useEffect(() => {
+    if (!game || game.status !== 'playing' || currentTurnId !== myId) return;
+    const iv = setInterval(() => setTimer(t => Math.max(0, Math.round((t - 0.1) * 10) / 10)), 100);
+    return () => clearInterval(iv);
+  }, [game?.status, currentTurnId, myId]);
+
+  const isMyTurn = game ? currentTurnId === myId : false;
+  const myHand = useMemo(() => game?.players[myId]?.hand ?? [], [game, myId]);
+  // Optimistic: hide the card being submitted instantly, don't wait on the round trip
+  const displayHand = useMemo(
+    () => (pendingCardId ? myHand.filter(c => c.id !== pendingCardId) : myHand),
+    [myHand, pendingCardId],
+  );
   const topCard = game?.discardPile[game.discardPile.length - 1] ?? null;
 
-  const playable = useCallback((hand: Card[]) => {
+  // Re-arm the UNO button whenever the hand grows past 2 again
+  useEffect(() => {
+    if (myHand.length > 2 && unoCalled) setUnoCalled(false);
+  }, [myHand.length, unoCalled]);
+
+  // Down to your last card and haven't called it — 10 second window before
+  // you auto pick up 2. Cancelled by calling it or by the hand count changing
+  // (played out to win, drew more cards, the optimistic dip reverting, etc.)
+  useEffect(() => {
+    if (unoDeadlineRef.current) { clearTimeout(unoDeadlineRef.current); unoDeadlineRef.current = null; }
+    if (!game || game.status !== 'playing' || displayHand.length !== 1 || unoCalled) return;
+    unoDeadlineRef.current = setTimeout(() => { void missedUnoCall(gameId, myId); }, 10000);
+    return () => { if (unoDeadlineRef.current) clearTimeout(unoDeadlineRef.current); };
+  }, [displayHand.length, unoCalled, game?.status, gameId, myId]);
+
+  const playableSet = useMemo(() => {
     if (!game || !topCard || !isMyTurn) return new Set<string>();
-    return new Set(hand.filter(c => canPlayCard(c, topCard, game.currentColor, game.pendingDraw)).map(c => c.id));
-  }, [game, topCard, isMyTurn]);
+    return new Set(
+      myHand.filter(c => canPlayCard(c, topCard, game.currentColor, game.pendingDraw)).map(c => c.id),
+    );
+  }, [game, topCard, isMyTurn, myHand]);
 
-  const playableSet = playable(myHand);
-
-  function handleCardTap(card: Card) {
-    if (!playableSet.has(card.id)) return;
-    if (selectedCardId === card.id) {
-      card.type === 'wild8' ? setShowColorPicker(true) : submitPlay(card.id);
-    } else {
-      setSelectedCardId(card.id);
+  async function submitPlay(cardId: string, color?: Color) {
+    if (actionInFlightRef.current) return;
+    actionInFlightRef.current = true;
+    setPendingColorId(null);
+    setError('');
+    setPendingCardId(cardId); // hide it from the fan immediately — no waiting on the round trip
+    try {
+      await playCard(gameId, myId, cardId, color);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error');
+    } finally {
+      setPendingCardId(null);
+      actionInFlightRef.current = false;
     }
   }
 
-  async function submitPlay(cardId: string, color?: Color) {
-    setShowColorPicker(false);
-    setSelectedCardId(null);
+  async function submitMistake(cardId: string) {
+    if (actionInFlightRef.current) return;
+    actionInFlightRef.current = true;
     setError('');
-    try { await playCard(gameId, myId, cardId, color); }
-    catch (e) { setError(e instanceof Error ? e.message : 'Error'); }
+    try {
+      await foolishMistake(gameId, myId, cardId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error');
+    } finally {
+      actionInFlightRef.current = false;
+    }
+  }
+
+  // A tap is a play attempt. Legal card → play it (or open the colour picker
+  // for wild8/+4). Illegal card → foolish mistake, pick up 2 (+ any live stack).
+  function handlePlay(card: Card) {
+    if (pickup || actionInFlightRef.current || pendingColorId) return;
+    if (!playableSet.has(card.id)) {
+      // Out of turn: flat 2, doesn't touch whatever the actual current player owes.
+      const penalty = isMyTurn ? 2 + (game?.pendingDraw ?? 0) : 2;
+      flashMessage(mistakeMessage('', penalty, true));
+      void submitMistake(card.id);
+      return;
+    }
+    if (card.type === 'wild8' || card.type === 'draw4') { setPendingColorId(card.id); return; }
+    void submitPlay(card.id);
   }
 
   async function handleDraw() {
-    setSelectedCardId(null);
+    if (!isMyTurn || pickup || actionInFlightRef.current) return;
+    actionInFlightRef.current = true;
     setError('');
     try { await drawCard(gameId, myId); }
     catch (e) { setError(e instanceof Error ? e.message : 'Error drawing'); }
+    finally { actionInFlightRef.current = false; }
   }
 
-  async function handleReset() {
-    try { await resetGame(gameId); router.replace(`/lobby/${gameId}`); }
-    catch { setError('Error resetting'); }
+  async function handleVotePlayAgain() {
+    try { await votePlayAgain(gameId, myId); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Error'); }
+  }
+
+  // Another player has 1 card and hasn't called it — tap their stack to catch them.
+  async function handleCatch(targetId: string) {
+    if (actionInFlightRef.current) return;
+    actionInFlightRef.current = true;
+    setError('');
+    try { await catchMissedCall(gameId, myId, targetId); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Error'); }
+    finally { actionInFlightRef.current = false; }
+  }
+
+  async function handleCallOneCard() {
+    setUnoCalled(true); // optimistic — opponents see the real, server-confirmed flag
+    try { await callOneCard(gameId, myId); }
+    catch (e) { setUnoCalled(false); setError(e instanceof Error ? e.message : 'Error'); }
+  }
+
+  async function handleLeave() {
+    try { await leaveGame(gameId, myId); } catch { /* best-effort, still navigate away */ }
+    router.push('/');
   }
 
   // ── Loading ────────────────────────────────────────────────────────────────
   if (!game) {
     return (
-      <div className="h-full flex items-center justify-center" style={TABLE_BG}>
-        <div className="w-8 h-8 rounded-full border-2 border-white border-t-transparent animate-spin" />
+      <div className="h-full flex items-center justify-center">
+        <div
+          className="w-8 h-8 rounded-full border-2 animate-spin"
+          style={{ borderColor: 'var(--color-accent)', borderTopColor: 'transparent' }}
+        />
       </div>
     );
   }
 
-  // ── Win screen ─────────────────────────────────────────────────────────────
+  const look: CardLook = game.cardLook ?? 'solid';
+  const me = game.players[myId];
+  const myWins = stats[myId]?.wins ?? 0;
+  const col = CARD_COLORS[game.currentColor] ?? CARD_COLORS.red;
+
+  // ── Winner screen ──────────────────────────────────────────────────────────
   if (game.status === 'finished') {
     const winner = game.players[game.winner ?? ''];
     const iWon = game.winner === myId;
-    const winnerIndex = game.playerOrder.indexOf(game.winner ?? '');
-    const winnerWins = stats[game.winner ?? '']?.wins ?? 0;
-    const winningCard = game.discardPile[game.discardPile.length - 1] ?? null;
+    const winLine = iWon ? 'YOU WIN' : `${(winner?.name ?? '?').toUpperCase()} WINS`;
+    const endedByLeave = !!game.endedByLeave;
+    const kicker = endedByLeave ? 'Opponent left' : 'Round complete';
+    const subtitleText = endedByLeave
+      ? game.lastAction
+      : `GG. First to empty the hand takes the round${iWon ? ' — that’s you' : ''}. Run it back?`;
+    const standings = game.playerOrder
+      .map(id => game.players[id])
+      .filter(Boolean)
+      .sort((a, b) => a.hand.length - b.hand.length);
+
+    const standingsTable = (
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+        <thead>
+          <tr>
+            {['Rank', 'Player', 'Cards left'].map((th, i) => (
+              <th
+                key={th}
+                style={{
+                  textAlign: i === 2 ? 'right' : 'left',
+                  padding: '0 0 10px',
+                  width: i === 0 ? 48 : undefined,
+                  borderBottom: '2px solid var(--color-divider)',
+                }}
+              >
+                <span className="field-label" style={{ margin: 0 }}>{th}</span>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {standings.map((p, i) => (
+            <tr key={p.id}>
+              <td className="heading" style={{ padding: '12px 0', borderBottom: '1px solid var(--color-divider)' }}>{i + 1}</td>
+              <td className="heading" style={{ padding: '12px 0', borderBottom: '1px solid var(--color-divider)' }}>
+                {p.name.toUpperCase()}
+                {p.id === myId && <span className="text-muted" style={{ fontWeight: 400 }}> · YOU</span>}
+              </td>
+              <td style={{ padding: '12px 0', textAlign: 'right', borderBottom: '1px solid var(--color-divider)' }}>{p.hand.length}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+
+    const totalPlayers = game.playerOrder.length;
+    const playAgainVotes = game.playerOrder.filter(id => game.players[id]?.playAgain).length;
+    const iVotedPlayAgain = !!game.players[myId]?.playAgain;
+    const hostId = game.playerOrder.find(id => game.players[id]?.isHost);
+    const hostVoted = !!hostId && !!game.players[hostId]?.playAgain;
+
+    const playAgain = (
+      <button
+        type="button"
+        onClick={handleVotePlayAgain}
+        className={iVotedPlayAgain ? 'btn btn-secondary' : 'btn btn-primary'}
+        style={{ fontSize: 15, padding: '15px 22px' }}
+      >
+        {iVotedPlayAgain ? "YOU'RE IN" : 'PLAY AGAIN'} <span>{iVotedPlayAgain ? '✓' : '↻'}</span>
+      </button>
+    );
+    const playAgainStatus = !endedByLeave && (
+      <span className="text-muted" style={{ fontSize: 12 }}>
+        {hostVoted ? '✓ Host ready' : 'Waiting on host'} · {playAgainVotes}/{totalPlayers} voted to play again
+      </span>
+    );
+    const mainMenu = (
+      <button
+        type="button"
+        onClick={() => router.replace('/')}
+        className="btn"
+        style={{
+          background: 'transparent',
+          color: '#f4efe7',
+          border: '1px solid color-mix(in srgb,#f4efe7 45%,transparent)',
+          fontSize: 15,
+          padding: '15px 22px',
+        }}
+      >
+        MAIN MENU
+      </button>
+    );
 
     return (
-      <div className="h-full flex flex-col items-center justify-center px-5" style={TABLE_BG}>
-        <motion.div
-          initial={{ scale: 0.5, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-          className="text-center w-full max-w-xs"
-        >
-          <div className="text-7xl mb-4">{iWon ? '🎉' : '😢'}</div>
-          <div className="flex justify-center mb-3">
-            <PlayerAvatar name={winner?.name ?? '?'} index={winnerIndex} wins={winnerWins} size="lg" />
-          </div>
-          <h1 className="text-3xl font-black text-white mb-1">
-            {iWon ? 'You Win!' : `${winner?.name ?? '?'} Wins!`}
-          </h1>
-
-          {/* Winning card */}
-          {winningCard && (
-            <div className="flex flex-col items-center gap-1.5 my-4">
-              <span className="text-white/60 text-xs font-semibold uppercase tracking-wider">
-                {iWon ? 'You played' : `${winner?.name ?? '?'} played`}
-              </span>
-              <motion.div
-                initial={{ y: -20, rotate: -12, opacity: 0 }}
-                animate={{ y: 0, rotate: 0, opacity: 1 }}
-                transition={{ type: 'spring', stiffness: 280, damping: 18, delay: 0.15 }}
-              >
-                <PlayingCard
-                  card={winningCard}
-                  size="md"
-                  chosenColor={winningCard.type === 'wild8' ? game.currentColor : undefined}
-                />
-              </motion.div>
+      <div className="h-full relative overflow-hidden">
+        {/* Desktop winner */}
+        <div className="hidden lg:grid absolute inset-0" style={{ gridTemplateColumns: '1.1fr 1fr' }}>
+          <div
+            style={{
+              background: 'linear-gradient(155deg,#2a221c,#161210)',
+              padding: '56px 48px',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              position: 'relative',
+              overflow: 'hidden',
+              borderRight: '2px solid var(--color-divider)',
+            }}
+          >
+            <Watermark8 size={400} opacity={0.13} right={-40} bottom={-100} />
+            <div className="kicker" style={{ marginBottom: 16, position: 'relative' }}>{kicker}</div>
+            <div
+              className="heading"
+              style={{ fontSize: 'clamp(72px,8vw,120px)', lineHeight: 0.84, letterSpacing: '-.04em', position: 'relative' }}
+            >
+              {winLine}
             </div>
-          )}
-          {winnerWins > 0 && (
-            <p className="text-yellow-300 font-bold mb-1 text-sm">
-              {winnerWins} total win{winnerWins > 1 ? 's' : ''} 🏆
+            <p style={{ fontSize: 18, maxWidth: 380, margin: '26px 0 0', opacity: 0.8, position: 'relative' }}>
+              {subtitleText}
             </p>
-          )}
-
-          {/* All player scores */}
-          <div className="flex justify-center gap-5 my-6">
-            {game.playerOrder.map((pid, i) => (
-              <div key={pid} className="flex flex-col items-center gap-1">
-                <PlayerAvatar name={game.players[pid]?.name ?? '?'} index={i} wins={stats[pid]?.wins ?? 0} size="sm" />
-                <span className="text-white/70 text-[10px]">{game.players[pid]?.name}</span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 40, position: 'relative' }}>
+              <div style={{ display: 'flex', gap: 12 }}>
+                {playAgain}
+                {mainMenu}
               </div>
-            ))}
+              {playAgainStatus}
+            </div>
           </div>
+          <div style={{ padding: '56px 44px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <h4 className="heading" style={{ margin: '0 0 14px', fontSize: 22 }}>Final standings</h4>
+            {standingsTable}
+          </div>
+        </div>
 
-          <div className="flex flex-col gap-3">
-            {game.players[myId]?.isHost ? (
-              <button onClick={handleReset} className="w-full py-4 rounded-2xl font-black bg-white text-gray-900 active:scale-95 transition-transform shadow-xl">
-                Play Again
-              </button>
-            ) : (
-              <button onClick={() => router.replace(`/lobby/${gameId}`)} className="w-full py-4 rounded-2xl font-black bg-white text-gray-900 active:scale-95 transition-transform shadow-xl">
-                Play Again
-              </button>
-            )}
-            <button onClick={() => router.replace('/')} className="w-full py-4 rounded-2xl font-bold border-2 border-white/30 text-white active:scale-95 transition-transform">
-              Main Menu
-            </button>
+        {/* Mobile winner */}
+        <div
+          className="lg:hidden absolute inset-0 flex flex-col items-center justify-center"
+          style={{ padding: '0 30px', gap: 16, textAlign: 'center' }}
+        >
+          <div className="kicker" style={{ fontSize: 11 }}>{kicker}</div>
+          <div className="heading" style={{ fontSize: 56, lineHeight: 0.9, letterSpacing: '-.03em' }}>
+            {iWon ? <>YOU<br />WIN</> : winLine}
           </div>
-        </motion.div>
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              padding: '3px 11px',
+              border: '1px solid color-mix(in srgb,#f4b400 55%,transparent)',
+              borderRadius: 12,
+              color: 'var(--color-gold)',
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '.06em',
+            }}
+          >
+            ★ {stats[game.winner ?? '']?.wins ?? 0} ROUNDS WON
+          </span>
+          <div style={{ width: '100%', maxWidth: 320 }}>{standingsTable}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10, width: '100%', maxWidth: 320 }}>
+            {playAgain}
+            {mainMenu}
+            {playAgainStatus}
+          </div>
+        </div>
       </div>
     );
   }
 
-  // ── Game board ─────────────────────────────────────────────────────────────
-  const currentPlayerId = game.playerOrder[game.currentPlayerIndex];
+  // ── Table screen ───────────────────────────────────────────────────────────
   const myIndex = game.playerOrder.indexOf(myId);
-  const me = game.players[myId];
+  const opponents = (
+    myIndex >= 0
+      ? [...game.playerOrder.slice(myIndex + 1), ...game.playerOrder.slice(0, myIndex)]
+      : game.playerOrder.filter(id => id !== myId)
+  ).map(id => game.players[id]).filter(Boolean);
 
-  // Rotate so my seat is index 0; opponents are in clockwise turn order from me.
-  const opponents = myIndex >= 0
-    ? [...game.playerOrder.slice(myIndex + 1), ...game.playerOrder.slice(0, myIndex)]
-    : game.playerOrder.filter(id => id !== myId);
+  // Seat distribution: first opponent left, last right, the rest across the top
+  let leftOpp: Player[] = [];
+  let rightOpp: Player[] = [];
+  let topOpp: Player[] = [];
+  if (opponents.length <= 2) {
+    topOpp = opponents;
+  } else {
+    leftOpp = [opponents[0]];
+    rightOpp = [opponents[opponents.length - 1]];
+    topOpp = opponents.slice(1, -1);
+  }
 
-  const nextPlayerIndex = (game.currentPlayerIndex + game.direction + game.playerOrder.length) % game.playerOrder.length;
-  const nextPlayerId = game.playerOrder[nextPlayerIndex];
-  const nextPlayerName = game.players[nextPlayerId]?.name ?? '...';
-  const currentPlayerName = game.players[currentPlayerId]?.name ?? '...';
+  const turnLabel = isMyTurn
+    ? `YOUR TURN · ${Math.ceil(timer)}S`
+    : `${(game.players[currentTurnId ?? '']?.name ?? '...').toUpperCase()}’S TURN…`;
 
-  // Felt oval is sized to comfortably contain the center content.
-  // Opponents sit on a ring outside it with explicit clearance.
-  const cx = tableDims.w / 2;
-  const cy = tableDims.h / 2;
-  const feltRx = Math.max(tableDims.w * 0.30, 100);  // felt oval half-width
-  const feltRy = Math.max(tableDims.h * 0.30, 110);  // felt oval half-height
-  const SLOT_CLEAR_X = 44;  // half slot width + gap
-  const SLOT_CLEAR_Y = 44;  // half slot height + gap
-  const rx = Math.min(feltRx + SLOT_CLEAR_X, tableDims.w / 2 - 32);
-  const ry = Math.min(feltRy + SLOT_CLEAR_Y, tableDims.h / 2 - 28);
+  const clockwise = game.direction === 1;
+  const unoArmed = displayHand.length <= 2 && displayHand.length > 0 && !unoCalled;
+  const pendingChip = game.pendingDraw > 0 && (
+    <span
+      className="heading"
+      style={{ color: 'var(--color-gold)', fontSize: 11, letterSpacing: '.1em' }}
+    >
+      · PICK UP +{game.pendingDraw}
+    </span>
+  );
 
-  const opponentAngles = getOpponentAngles(opponents.length);
+  const discardCard = topCard && (
+    <motion.div
+      key={topCard.id}
+      initial={{ scale: 0.7, rotate: -14, opacity: 0 }}
+      animate={{ scale: 1, rotate: -5, opacity: 1 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 24 }}
+    >
+      <CardFace card={topCard} w={108} h={158} look={look} />
+    </motion.div>
+  );
 
-  const colorDotStyle: React.CSSProperties = {
-    width: 14, height: 14, borderRadius: '50%',
-    background: CARD_BG[game.currentColor],
-    boxShadow: `0 0 8px ${CARD_BG[game.currentColor]}`,
-    flexShrink: 0,
+  const toast = (
+    <AnimatePresence>
+      {actionMsg && (
+        <motion.div
+          key={actionMsg}
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0 }}
+          style={{
+            position: 'absolute',
+            top: 70,
+            left: 0,
+            right: 0,
+            zIndex: 90,
+            display: 'flex',
+            justifyContent: 'center',
+            pointerEvents: 'none',
+          }}
+        >
+          <div
+            className="glass"
+            style={{ padding: '6px 14px', fontSize: 12, fontWeight: 700, letterSpacing: '.03em', maxWidth: 320, textAlign: 'center' }}
+          >
+            {actionMsg}
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+
+  const iconBtn: React.CSSProperties = {
+    width: 38,
+    height: 38,
+    border: '2px solid color-mix(in srgb,#f4efe7 25%,transparent)',
+    borderRadius: 8,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: 'color-mix(in srgb,#f4efe7 80%,transparent)',
+    background: 'transparent',
+    cursor: 'pointer',
   };
 
-  const twoRowHand = myHand.length >= 8;
-
   return (
-    <div
-      className="h-full flex flex-col overflow-hidden relative"
-      style={TABLE_BG}
-      onClick={() => setSelectedCardId(null)}
-    >
-      {/* ── Top bar ─────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-4 pt-3 flex-shrink-0">
-        <div className="bg-black/30 backdrop-blur-sm rounded-full px-3 py-1.5 flex items-center gap-1.5">
-          <div style={colorDotStyle} />
-          <span className="text-white text-xs font-bold capitalize">{game.currentColor}</span>
-          {game.pendingDraw > 0 && (
-            <span className="bg-red-800 text-white text-[10px] font-black rounded-full px-1.5 py-0.5 ml-1">
-              +{game.pendingDraw}
-            </span>
-          )}
-        </div>
-        <div className="bg-black/30 backdrop-blur-sm rounded-full px-3 py-1.5">
-          <span className="text-white/70 text-[11px] font-bold tracking-wider">{gameId}</span>
-        </div>
-      </div>
+    <div className="h-full relative overflow-hidden">
+      <Watermark8 />
 
-      {/* ── Toast ───────────────────────────────────────────── */}
-      <AnimatePresence>
-        {actionMsg && (
-          <motion.div
-            key={actionMsg}
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="absolute top-14 left-4 right-4 z-40 flex justify-center pointer-events-none"
+      {/* ═══ Desktop table ═══════════════════════════════════════════ */}
+      <div className="hidden lg:block absolute inset-0">
+        {/* Corner controls */}
+        <div style={{ position: 'absolute', top: 18, left: 20, display: 'flex', gap: 10, zIndex: 20 }}>
+          <button
+            type="button"
+            style={iconBtn}
+            onClick={() => {
+              if (document.fullscreenElement) document.exitFullscreen();
+              else document.documentElement.requestFullscreen().catch(() => {});
+            }}
+            aria-label="Toggle fullscreen"
           >
-            <div className="bg-black/70 backdrop-blur-sm rounded-full px-4 py-1.5 text-white text-xs font-semibold border border-white/10 max-w-[280px] text-center">
-              {actionMsg}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" />
+            </svg>
+          </button>
+          <Wordmark size={16} style={{ alignSelf: 'center' }} />
+        </div>
+        <div style={{ position: 'absolute', top: 18, right: 20, display: 'flex', gap: 10, zIndex: 20 }}>
+          <button type="button" onClick={handleLeave} style={iconBtn} aria-label="Leave game">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+        </div>
 
-      {/* ── Round table area ─────────────────────────────────── */}
-      <div ref={tableRef} className="flex-1 relative min-h-0">
+        {toast}
 
-        {/* Oval felt surface — sized from feltRx/feltRy, always inside opponent ring */}
-        <div style={{
-          position: 'absolute',
-          left: '50%', top: '50%',
-          transform: 'translate(-50%, -50%)',
-          width: feltRx * 2,
-          height: feltRy * 2,
-          borderRadius: '50%',
-          background: 'radial-gradient(ellipse at 40% 35%, rgba(0,0,0,0.15) 0%, rgba(0,0,0,0.42) 100%)',
-          border: '2.5px solid rgba(255,255,255,0.13)',
-          boxShadow: 'inset 0 0 40px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.06)',
-          pointerEvents: 'none',
-        }} />
+        {/* Top opponents */}
+        <div style={{ position: 'absolute', top: 64, left: 0, right: 0, display: 'flex', justifyContent: 'center', gap: 54 }}>
+          {topOpp.map(p => (
+            <OpponentSeat
+              key={p.id}
+              player={p}
+              side="top"
+              isCurrent={p.id === currentTurnId}
+              isSkipped={p.id === skippedPlayerId}
+              wins={stats[p.id]?.wins ?? 0}
+              catchable={p.hand.length === 1 && !p.unoCalled}
+              onCatch={() => handleCatch(p.id)}
+            />
+          ))}
+        </div>
+        {/* Left opponent */}
+        <div style={{ position: 'absolute', left: 44, top: '50%', transform: 'translateY(-50%)' }}>
+          {leftOpp.map(p => (
+            <OpponentSeat
+              key={p.id}
+              player={p}
+              side="left"
+              isCurrent={p.id === currentTurnId}
+              isSkipped={p.id === skippedPlayerId}
+              wins={stats[p.id]?.wins ?? 0}
+              catchable={p.hand.length === 1 && !p.unoCalled}
+              onCatch={() => handleCatch(p.id)}
+            />
+          ))}
+        </div>
+        {/* Right opponent */}
+        <div style={{ position: 'absolute', right: 44, top: '50%', transform: 'translateY(-50%)' }}>
+          {rightOpp.map(p => (
+            <OpponentSeat
+              key={p.id}
+              player={p}
+              side="right"
+              isCurrent={p.id === currentTurnId}
+              isSkipped={p.id === skippedPlayerId}
+              wins={stats[p.id]?.wins ?? 0}
+              catchable={p.hand.length === 1 && !p.unoCalled}
+              onCatch={() => handleCatch(p.id)}
+            />
+          ))}
+        </div>
 
-        {/* Center: draw + discard + turn info */}
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-          <div className="flex items-center gap-5">
-            {/* Draw pile */}
-            <button
-              onClick={isMyTurn ? handleDraw : undefined}
-              className={`flex flex-col items-center gap-1 ${isMyTurn ? 'active:scale-95' : ''} transition-transform`}
+        {/* Center pile */}
+        <div
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: '46%',
+            transform: 'translate(-50%,-50%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 26,
+          }}
+        >
+          <div
+            style={{
+              padding: 6,
+              borderRadius: 18,
+              boxShadow: `0 0 0 2px ${col.bg}, 0 0 34px color-mix(in srgb, ${col.bg} 45%, transparent)`,
+            }}
+          >
+            {discardCard}
+          </div>
+          <DrawDeck w={104} h={150} onClick={handleDraw} disabled={!isMyTurn || !!pickup} />
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: 8,
+              color: 'color-mix(in srgb,#f4efe7 55%,transparent)',
+            }}
+          >
+            <svg
+              width="46"
+              height="46"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{ transform: clockwise ? 'none' : 'scaleX(-1)' }}
             >
-              <div style={{ position: 'relative' }}>
-                <FaceDownCard />
-                <div style={{ position: 'absolute', top: -2, left: -2, zIndex: -1, transform: 'scale(0.97)', opacity: 0.6 }}>
-                  <FaceDownCard />
-                </div>
-                <div style={{ position: 'absolute', top: -4, left: -4, zIndex: -2, transform: 'scale(0.94)', opacity: 0.3 }}>
-                  <FaceDownCard />
-                </div>
-                <div style={{
-                  position: 'absolute', top: -6, right: -6,
-                  background: '#fff', color: '#111', fontSize: 9, fontWeight: 900,
-                  borderRadius: '50%', width: 18, height: 18,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  boxShadow: '0 1px 4px rgba(0,0,0,0.4)',
-                }}>
-                  {game.drawPile.length}
-                </div>
-              </div>
-              {isMyTurn && (
-                <span className="text-white/80 text-[10px] font-bold">
-                  {game.pendingDraw > 0 ? `Draw +${game.pendingDraw}` : 'Draw'}
-                </span>
-              )}
-            </button>
-
-            {/* Discard pile */}
-            <div style={{
-              padding: 5, borderRadius: 14,
-              background: 'rgba(255,255,255,0.18)',
-              boxShadow: '0 0 0 2px rgba(255,255,255,0.55), 0 6px 24px rgba(0,0,0,0.35)',
-            }}>
-              {topCard ? (
-                <motion.div
-                  key={topCard.id}
-                  initial={{ scale: 0.7, rotate: -8, opacity: 0 }}
-                  animate={{ scale: 1, rotate: 0, opacity: 1 }}
-                  transition={{ type: 'spring', stiffness: 400, damping: 22 }}
-                >
-                  <PlayingCard card={topCard} size="md" chosenColor={topCard.type === 'wild8' ? game.currentColor : undefined} />
-                </motion.div>
-              ) : (
-                <div style={{ width: 72, height: 104, borderRadius: 10, border: '2px dashed rgba(255,255,255,0.4)' }} />
-              )}
-            </div>
-          </div>
-
-          {/* Turn flow arrow */}
-          <motion.div
-            key={`${currentPlayerId}-${nextPlayerId}`}
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-            className="bg-black/30 backdrop-blur-sm rounded-full px-3 py-1.5 flex items-center gap-1.5"
-          >
-            <span className={`text-[11px] font-black truncate max-w-[60px] ${currentPlayerId === myId ? 'text-yellow-300' : 'text-white'}`}>
-              {currentPlayerId === myId ? 'You' : currentPlayerName}
+              <path d="M21 12a9 9 0 1 1-3-6.7" />
+              <path d="M21 3v5h-5" />
+            </svg>
+            <span style={{ fontSize: 10, letterSpacing: '.14em', textTransform: 'uppercase' }}>
+              {clockwise ? 'Clockwise' : 'Anticlockwise'}
             </span>
-            <span className="text-white/60 text-xs">→</span>
-            <span className={`text-[11px] font-black truncate max-w-[60px] ${nextPlayerId === myId ? 'text-yellow-300' : 'text-white/80'}`}>
-              {nextPlayerId === myId ? 'You' : nextPlayerName}
-            </span>
-          </motion.div>
-
-          {/* Turn pill */}
-          <div className={`rounded-full px-4 py-1.5 text-xs font-bold text-center max-w-[200px]
-            ${isMyTurn ? 'bg-white text-gray-900 shadow-lg' : 'bg-black/40 text-white/80'}`}>
-            {isMyTurn
-              ? game.pendingDraw > 0 ? `Draw +${game.pendingDraw} or stack a +2/+4` : 'Your turn'
-              : `${game.players[currentPlayerId]?.name ?? '...'}'s turn`}
           </div>
-
-          {error && <p className="text-red-300 text-[11px] text-center">{error}</p>}
         </div>
 
-        {/* Opponents around the ellipse */}
-        {opponents.map((id, i) => {
-          const angleDeg = opponentAngles[i];
-          const angleRad = (angleDeg * Math.PI) / 180;
-          const x = cx + rx * Math.sin(angleRad);
-          const y = cy - ry * Math.cos(angleRad);
-          return (
+        {/* In play row */}
+        <div
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: 'calc(46% + 122px)',
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            color: 'color-mix(in srgb,#f4efe7 75%,transparent)',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <span style={{ width: 14, height: 14, display: 'inline-block', background: col.bg, borderRadius: 3 }} />
+          <span style={{ fontSize: 11, letterSpacing: '.14em', textTransform: 'uppercase', fontWeight: 600 }}>
+            In play · {col.name}
+          </span>
+          <span style={{ opacity: 0.5 }}>·</span>
+          <span
+            style={{
+              fontSize: 11,
+              letterSpacing: '.14em',
+              textTransform: 'uppercase',
+              fontWeight: 700,
+              color: isMyTurn ? 'var(--color-accent)' : 'color-mix(in srgb,#f4efe7 75%,transparent)',
+            }}
+          >
+            {turnLabel}
+          </span>
+          {pendingChip}
+          {error && <span style={{ color: 'var(--color-accent)', fontSize: 11, fontWeight: 700 }}>· {error.toUpperCase()}</span>}
+        </div>
+
+        {/* Your zone */}
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 18,
+            display: 'grid',
+            gridTemplateColumns: '270px 1fr 270px',
+            alignItems: 'end',
+            gap: 14,
+            padding: '0 30px',
+          }}
+        >
+          {/* You-pod */}
+          <div
+            className="glass"
+            style={{
+              padding: '12px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              justifySelf: 'start',
+              ...(isMyTurn
+                ? {
+                    border: '1px solid color-mix(in srgb,var(--color-accent) 60%,transparent)',
+                    boxShadow: '0 0 20px color-mix(in srgb,var(--color-accent) 25%,transparent)',
+                  }
+                : {}),
+            }}
+          >
             <div
-              key={id}
+              className="heading"
               style={{
-                position: 'absolute',
-                left: x,
-                top: y,
-                transform: 'translate(-50%, -50%)',
-                zIndex: 10,
+                width: 44,
+                height: 44,
+                flex: 'none',
+                borderRadius: 12,
+                background: 'var(--color-accent)',
+                color: '#f8f4f4',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 15,
               }}
             >
-              <TableOpponent
-                player={game.players[id]}
-                wins={stats[id]?.wins ?? 0}
-                isCurrent={id === currentPlayerId}
-                playerIndex={game.playerOrder.indexOf(id)}
-                isSkipped={id === skippedPlayerId}
-              />
+              {(me?.name ?? 'P1').slice(0, 2).toUpperCase()}
             </div>
-          );
-        })}
-      </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+              <span className="heading" style={{ fontSize: 15, letterSpacing: '.04em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {(me?.name ?? '').toUpperCase()} · {displayHand.length} CARDS
+              </span>
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 700,
+                  letterSpacing: '.06em',
+                  color: isMyTurn ? 'var(--color-accent)' : 'color-mix(in srgb,#f4efe7 55%,transparent)',
+                }}
+              >
+                {turnLabel}
+              </span>
+              <span
+                style={{
+                  alignSelf: 'flex-start',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  padding: '2px 9px',
+                  border: '1px solid color-mix(in srgb,#f4b400 55%,transparent)',
+                  borderRadius: 12,
+                  color: 'var(--color-gold)',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  letterSpacing: '.06em',
+                }}
+              >
+                ★ {myWins} ROUNDS WON
+              </span>
+            </div>
+          </div>
 
-      {/* ── My area ─────────────────────────────────────────── */}
-      <div className="flex-shrink-0 pb-2">
-        <div className="flex justify-center mb-1">
-          <div className="flex flex-col items-center gap-0.5 relative">
-            <PlayerAvatar
-              name={me?.name ?? ''}
-              index={myIndex}
-              wins={stats[myId]?.wins ?? 0}
-              isCurrentTurn={isMyTurn}
-              isYou
-              size="sm"
-            />
-            <AnimatePresence>
-              {skippedPlayerId === myId && (
-                <motion.div
-                  initial={{ scale: 0, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0, opacity: 0 }}
-                  transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-                  style={{
-                    position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
-                    width: 34, height: 34, borderRadius: '50%',
-                    background: 'rgba(220,38,38,0.65)',
-                    border: '2px solid #ef4444',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    pointerEvents: 'none',
-                  }}
-                >
-                  <span style={{ color: '#fff', fontSize: 18, fontWeight: 900, lineHeight: 1 }}>✕</span>
-                </motion.div>
-              )}
-            </AnimatePresence>
-            <span className="text-white text-[11px] font-bold drop-shadow">{me?.name}</span>
+          {/* Hand fan */}
+          <HandFan hand={displayHand} playableSet={playableSet} look={look} onPlay={handlePlay} w={88} h={128} overlap={26} arc={4} />
+
+          {/* UNO button */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <UnoButton armed={unoArmed} called={unoCalled} onClick={handleCallOneCard} />
           </div>
         </div>
+      </div>
 
-        {/* Hand */}
-        <div className="overflow-x-auto scrollbar-hide px-3" onClick={e => e.stopPropagation()}>
-          {twoRowHand ? (
-            <div style={{ display: 'grid', gridTemplateRows: 'repeat(2, auto)', gridAutoFlow: 'column', gap: 6, paddingTop: 32, paddingBottom: 12, width: 'max-content' }}>
-              {myHand.map(card => (
-                <PlayingCard key={card.id} card={card} playable={playableSet.has(card.id)} selected={selectedCardId === card.id} onClick={() => handleCardTap(card)} size="md" />
-              ))}
-            </div>
-          ) : (
-            <div className="flex min-w-max pb-3" style={{ gap: 6, paddingTop: 32 }}>
-              {myHand.map(card => (
-                <PlayingCard key={card.id} card={card} playable={playableSet.has(card.id)} selected={selectedCardId === card.id} onClick={() => handleCardTap(card)} size="md" />
-              ))}
-            </div>
-          )}
+      {/* ═══ Mobile table ════════════════════════════════════════════ */}
+      <div className="lg:hidden absolute inset-0 overflow-hidden">
+        {/* Round header */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 14,
+            left: 0,
+            right: 0,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            gap: 10,
+            color: 'color-mix(in srgb,#f4efe7 60%,transparent)',
+            fontSize: 10,
+            letterSpacing: '.12em',
+            textTransform: 'uppercase',
+            fontWeight: 600,
+          }}
+        >
+          {gameId} · Classic ·<span style={{ color: 'var(--color-gold)' }}>★ {myWins} won</span>
+        </div>
+        <button
+          type="button"
+          onClick={handleLeave}
+          style={{ ...iconBtn, width: 30, height: 30, position: 'absolute', top: 8, right: 10, zIndex: 30 }}
+          aria-label="Leave game"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+
+        {toast}
+
+        {/* Opponent chips */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 36,
+            left: 8,
+            right: 8,
+            display: 'flex',
+            justifyContent: 'center',
+            flexWrap: 'wrap',
+            gap: 8,
+          }}
+        >
+          {opponents.map(p => (
+            <OppChip
+              key={p.id}
+              player={p}
+              isCurrent={p.id === currentTurnId}
+              isSkipped={p.id === skippedPlayerId}
+              catchable={p.hand.length === 1 && !p.unoCalled}
+              onCatch={() => handleCatch(p.id)}
+            />
+          ))}
+        </div>
+
+        {/* Turn pill */}
+        <div style={{ position: 'absolute', top: 108, left: 0, right: 0, display: 'flex', justifyContent: 'center' }}>
+          <span
+            className="heading"
+            style={{
+              padding: '4px 12px',
+              borderRadius: 12,
+              fontSize: 10,
+              letterSpacing: '.1em',
+              textTransform: 'uppercase',
+              background: isMyTurn ? 'var(--color-accent)' : 'rgba(0,0,0,.35)',
+              color: isMyTurn ? '#fff' : 'color-mix(in srgb,#f4efe7 65%,transparent)',
+              border: isMyTurn ? 0 : '1px solid rgba(248,244,244,.16)',
+            }}
+          >
+            {turnLabel}
+          </span>
+        </div>
+
+        {/* Center pile */}
+        <div
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: '40%',
+            transform: 'translate(-50%,-50%)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+          }}
+        >
+          <div
+            style={{
+              padding: 4,
+              borderRadius: 14,
+              boxShadow: `0 0 0 2px ${col.bg}, 0 0 24px color-mix(in srgb, ${col.bg} 45%, transparent)`,
+            }}
+          >
+            {topCard && (
+              <motion.div
+                key={topCard.id}
+                initial={{ scale: 0.7, rotate: -14, opacity: 0 }}
+                animate={{ scale: 1, rotate: -5, opacity: 1 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 24 }}
+              >
+                <CardFace card={topCard} w={74} h={106} look={look} />
+              </motion.div>
+            )}
+          </div>
+          <DrawDeck w={62} h={90} onClick={handleDraw} disabled={!isMyTurn || !!pickup} badge={game.drawPile.length} />
+        </div>
+
+        {/* In play row */}
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: 'calc(40% + 78px)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            gap: 6,
+            color: 'color-mix(in srgb,#f4efe7 75%,transparent)',
+            fontSize: 10,
+            letterSpacing: '.14em',
+            textTransform: 'uppercase',
+            fontWeight: 600,
+          }}
+        >
+          <span style={{ width: 12, height: 12, display: 'inline-block', background: col.bg, borderRadius: 3 }} />
+          In play · {col.name}
+          {pendingChip}
+        </div>
+        {error && (
+          <div style={{ position: 'absolute', left: 0, right: 0, top: 'calc(40% + 98px)', textAlign: 'center', color: 'var(--color-accent)', fontSize: 11, fontWeight: 700 }}>
+            {error}
+          </div>
+        )}
+
+        {/* Name + timer bar */}
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 196,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
+          <span className="heading" style={{ fontSize: 13 }}>{(me?.name ?? '').toUpperCase()}</span>
+          <span style={{ fontSize: 11, color: 'color-mix(in srgb,#f4efe7 55%,transparent)' }}>· {displayHand.length} CARDS</span>
+        </div>
+        <div
+          style={{
+            position: 'absolute',
+            left: '50%',
+            bottom: 186,
+            transform: 'translateX(-50%)',
+            width: 180,
+            height: 4,
+            borderRadius: 2,
+            background: 'rgba(248,244,244,.14)',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              height: '100%',
+              width: `${isMyTurn ? Math.max(0, Math.min(100, (timer / TURN_SECONDS) * 100)) : 0}%`,
+              background: 'var(--color-accent)',
+              borderRadius: 2,
+            }}
+          />
+        </div>
+
+        {/* Hand fan */}
+        <div style={{ position: 'absolute', left: 0, right: 0, bottom: 84 }}>
+          <HandFan hand={displayHand} playableSet={playableSet} look={look} onPlay={handlePlay} w={56} h={82} overlap={18} arc={3} />
+        </div>
+
+        {/* Bottom action bar */}
+        <div style={{ position: 'absolute', left: 16, right: 16, bottom: 20, display: 'flex', gap: 10 }}>
+          <button
+            type="button"
+            onClick={handleDraw}
+            disabled={!isMyTurn || !!pickup}
+            style={{
+              flex: 1,
+              height: 48,
+              border: '1.5px solid rgba(248,244,244,.28)',
+              borderRadius: 14,
+              background: 'rgba(0,0,0,.3)',
+              color: '#f4efe7',
+              fontFamily: 'var(--font-heading)',
+              fontWeight: 800,
+              fontSize: 14,
+              letterSpacing: '.06em',
+              cursor: 'pointer',
+              opacity: isMyTurn ? 1 : 0.5,
+            }}
+          >
+            {game.pendingDraw > 0 && isMyTurn ? `DRAW +${game.pendingDraw}` : 'DRAW'}
+          </button>
+          <UnoButton armed={unoArmed} called={unoCalled} onClick={handleCallOneCard} compact />
         </div>
       </div>
 
-      <ColorPicker
-        open={showColorPicker}
-        onSelect={color => { if (selectedCardId) submitPlay(selectedCardId, color); }}
+      {/* Pickup animation overlay */}
+      {pickup && <PickupOverlay count={pickup.n} who={pickup.who} />}
+
+      {/* Wild / +4 color picker */}
+      <WildPicker
+        open={pendingColorId !== null}
+        subtitle={myHand.find(c => c.id === pendingColorId)?.type === 'draw4' ? 'Request a colour for your +4' : 'Wild card played'}
+        onSelect={color => pendingColorId && submitPlay(pendingColorId, color)}
+        onCancel={() => setPendingColorId(null)}
       />
     </div>
   );
