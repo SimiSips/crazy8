@@ -2,10 +2,11 @@ export type Color = 'red' | 'green' | 'blue' | 'yellow';
 export type CardType = 'number' | 'skip' | 'reverse' | 'draw2' | 'draw4' | 'wild8';
 export type Direction = 1 | -1;
 export type GameStatus = 'lobby' | 'playing' | 'finished';
+export type CardLook = 'solid' | 'framed' | 'glass';
 
 export interface Card {
   id: string;
-  color: Color | null; // null for wild8
+  color: Color | null; // null for wild8 and draw4
   type: CardType;
   value: number | null; // 1-9 for number cards, null for others
 }
@@ -15,6 +16,9 @@ export interface Player {
   name: string;
   hand: Card[];
   isHost: boolean;
+  ready?: boolean;
+  unoCalled?: boolean;
+  playAgain?: boolean;
 }
 
 export interface GameState {
@@ -29,7 +33,14 @@ export interface GameState {
   currentColor: Color;
   pendingDraw: number;
   winner: string | null;
+  // Host lobby settings
+  cardLook?: CardLook;
+  startingHand?: number;
+  maxPlayers?: number;
   lastSkippedId: string | null;
+  lastMistakeId: string | null;
+  lastMistakePenalty?: number;
+  endedByLeave?: boolean;
   createdAt: number;
   lastAction: string;
 }
