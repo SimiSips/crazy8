@@ -82,12 +82,15 @@ Use the **✕** in the corner of the table to leave.
 - **3+ players:** you're removed from the game and play continues without you.
 - **Exactly 2 players:** leaving ends the round immediately — the remaining player wins by forfeit.
 
+### Game modes
+- **Classic:** the standard game. The 20-second turn timer shown on your turn is a visual pace-setter only — it doesn't auto-skip or auto-draw for you.
+- **⚡ Quick Fire:** you get **6 seconds** to act on your turn, and the timer is real. Run out of time and you automatically pick up (1 card normally, or the full stacked +2/+4 penalty if one is pending) and the turn moves on. Everything else — stacking, foolish mistakes, calling ONE CARD! — works the same, just much faster.
+
 ### Host lobby settings
+- **Game mode:** Classic / ⚡ Quick Fire.
 - **Card look:** solid / framed / glass — applies to every player's cards.
 - **Starting hand:** 5 / 8 / 10 cards.
 - **Seats:** 2–8 players.
-
-*Note: the 20-second turn timer shown on your turn is a visual pace-setter only — it doesn't auto-skip or auto-draw for you.*
 
 ## Tech stack
 

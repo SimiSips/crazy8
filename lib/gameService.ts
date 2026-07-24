@@ -10,7 +10,7 @@ import {
   dealNewRound,
   playAgainThresholdMet,
 } from './gameLogic';
-import type { GameState, Card, Color, CardLook } from './types';
+import type { GameState, Card, Color, CardLook, GameMode } from './types';
 
 function generateRoomCode(): string {
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -36,6 +36,7 @@ export async function createGame(hostId: string, hostName: string): Promise<stri
     cardLook: 'solid',
     startingHand: 8,
     maxPlayers: 8,
+    gameMode: 'classic',
     lastSkippedId: null,
     lastMistakeId: null,
     createdAt: Date.now(),
@@ -91,7 +92,7 @@ export async function removePlayer(gameId: string, hostId: string, targetId: str
 export async function updateSettings(
   gameId: string,
   hostId: string,
-  settings: Partial<{ cardLook: CardLook; startingHand: number; maxPlayers: number }>,
+  settings: Partial<{ cardLook: CardLook; startingHand: number; maxPlayers: number; gameMode: GameMode }>,
 ): Promise<void> {
   await runTransaction(db, async (tx) => {
     const ref = doc(db, 'games', gameId);
@@ -303,6 +304,42 @@ export async function drawCard(gameId: string, playerId: string): Promise<void> 
       currentPlayerIndex: nextIndex,
       lastAction: actionLabel,
       lastMistakeId: null,
+    });
+  });
+}
+
+// Quick Fire only: the 6-second turn clock ran out. The player picks up
+// (their pending +2/+4 stack, or 1 card) and the turn moves on. The current
+// player's own client fires this at 0s, with everyone else as a delayed
+// backstop in case that client is gone — so instead of throwing, it silently
+// no-ops whenever the turn has already moved on (stale timer).
+export async function turnTimedOut(gameId: string, playerId: string): Promise<void> {
+  await runTransaction(db, async (tx) => {
+    const ref = doc(db, 'games', gameId);
+    const snap = await tx.get(ref);
+    if (!snap.exists()) return;
+    const state = snap.data() as GameState;
+    if (state.status !== 'playing' || state.gameMode !== 'quickfire') return;
+    if (state.playerOrder[state.currentPlayerIndex] !== playerId) return;
+
+    const player = state.players[playerId];
+    if (!player) return;
+
+    const drawCount = state.pendingDraw > 0 ? state.pendingDraw : 1;
+    const { drawPile, discardPile, drawnCards } = drawFromPile(state.drawPile, state.discardPile, drawCount);
+    const newHand = [...player.hand, ...drawnCards];
+    const nextIndex = advanceTurn(state.currentPlayerIndex, state.playerOrder.length, state.direction, 1);
+
+    tx.update(ref, {
+      drawPile,
+      discardPile,
+      [`players.${playerId}.hand`]: newHand,
+      [`players.${playerId}.unoCalled`]: nextUnoCalled(player.unoCalled, newHand.length),
+      pendingDraw: 0,
+      currentPlayerIndex: nextIndex,
+      lastAction: `⚡ ${player.name} ran out of time — picks up ${drawCount}!`,
+      lastMistakeId: null,
+      lastSkippedId: null,
     });
   });
 }

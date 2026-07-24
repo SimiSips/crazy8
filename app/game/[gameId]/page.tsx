@@ -12,6 +12,7 @@ import {
   callOneCard,
   catchMissedCall,
   leaveGame,
+  turnTimedOut,
 } from '@/lib/gameService';
 import { fetchAllStats, type PlayerStats } from '@/lib/playerStats';
 import { canPlayCard } from '@/lib/gameLogic';
@@ -22,6 +23,8 @@ import { Wordmark, Watermark8 } from '@/components/Wordmark';
 import type { GameState, Card, Color, CardLook, Player } from '@/lib/types';
 
 const TURN_SECONDS = 20;
+const QUICKFIRE_SECONDS = 6;
+const QUICKFIRE_BACKSTOP_SECONDS = 2; // extra grace before opponents enforce a timeout
 
 // "take two for your foolish mistake" — phrased for the tapper, third-person for everyone else
 function mistakeMessage(name: string, penalty: number, isSelf: boolean): string {
@@ -450,16 +453,32 @@ export default function GamePage() {
     }
   }, [game, myId]);
 
-  // Cosmetic 20 s turn timer
+  // Turn timer — cosmetic 20 s in classic, a very real 6 s in Quick Fire.
+  // Also re-arms when the current player's hand size changes (drawing a
+  // playable card keeps the turn, so the clock has to restart).
+  const quickFire = game?.gameMode === 'quickfire';
+  const turnSeconds = quickFire ? QUICKFIRE_SECONDS : TURN_SECONDS;
   const currentTurnId = game?.playerOrder[game.currentPlayerIndex] ?? null;
+  const currentTurnHandLen = (currentTurnId && game?.players[currentTurnId]?.hand.length) || 0;
   useEffect(() => {
-    setTimer(TURN_SECONDS);
-  }, [currentTurnId]);
+    setTimer(turnSeconds);
+  }, [currentTurnId, currentTurnHandLen, turnSeconds]);
   useEffect(() => {
     if (!game || game.status !== 'playing' || currentTurnId !== myId) return;
     const iv = setInterval(() => setTimer(t => Math.max(0, Math.round((t - 0.1) * 10) / 10)), 100);
     return () => clearInterval(iv);
-  }, [game?.status, currentTurnId, myId]);
+  }, [game?.status, currentTurnId, currentTurnHandLen, myId]);
+
+  // Quick Fire enforcement: when the clock expires, the current player's own
+  // client submits the timeout (draw + lose the turn). Everyone else fires a
+  // couple of seconds later as a backstop in case that client disconnected —
+  // the transaction no-ops if the turn has already moved on.
+  useEffect(() => {
+    if (!game || game.status !== 'playing' || !quickFire || !currentTurnId) return;
+    const graceMs = currentTurnId === myId ? 0 : QUICKFIRE_BACKSTOP_SECONDS * 1000;
+    const t = setTimeout(() => { void turnTimedOut(gameId, currentTurnId); }, QUICKFIRE_SECONDS * 1000 + graceMs);
+    return () => clearTimeout(t);
+  }, [game?.status, quickFire, currentTurnId, currentTurnHandLen, myId, gameId]);
 
   const isMyTurn = game ? currentTurnId === myId : false;
   const myHand = useMemo(() => game?.players[myId]?.hand ?? [], [game, myId]);
@@ -773,7 +792,7 @@ export default function GamePage() {
   }
 
   const turnLabel = isMyTurn
-    ? `YOUR TURN · ${Math.ceil(timer)}S`
+    ? `${quickFire ? '⚡ ' : ''}YOUR TURN · ${Math.ceil(timer)}S`
     : `${(game.players[currentTurnId ?? '']?.name ?? '...').toUpperCase()}’S TURN…`;
 
   const clockwise = game.direction === 1;
@@ -863,6 +882,7 @@ export default function GamePage() {
             </svg>
           </button>
           <Wordmark size={16} style={{ alignSelf: 'center' }} />
+          {quickFire && <span className="tag tag-accent" style={{ alignSelf: 'center' }}>⚡ QUICK FIRE</span>}
         </div>
         <div style={{ position: 'absolute', top: 18, right: 20, display: 'flex', gap: 10, zIndex: 20 }}>
           <button type="button" onClick={handleLeave} style={iconBtn} aria-label="Leave game">
@@ -1269,7 +1289,7 @@ export default function GamePage() {
           <div
             style={{
               height: '100%',
-              width: `${isMyTurn ? Math.max(0, Math.min(100, (timer / TURN_SECONDS) * 100)) : 0}%`,
+              width: `${isMyTurn ? Math.max(0, Math.min(100, (timer / turnSeconds) * 100)) : 0}%`,
               background: 'var(--color-accent)',
               borderRadius: 2,
             }}

@@ -3,6 +3,7 @@ export type CardType = 'number' | 'skip' | 'reverse' | 'draw2' | 'draw4' | 'wild
 export type Direction = 1 | -1;
 export type GameStatus = 'lobby' | 'playing' | 'finished';
 export type CardLook = 'solid' | 'framed' | 'glass';
+export type GameMode = 'classic' | 'quickfire';
 
 export interface Card {
   id: string;
@@ -37,6 +38,7 @@ export interface GameState {
   cardLook?: CardLook;
   startingHand?: number;
   maxPlayers?: number;
+  gameMode?: GameMode;
   lastSkippedId: string | null;
   lastMistakeId: string | null;
   lastMistakePenalty?: number;
