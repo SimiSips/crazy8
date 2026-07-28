@@ -3,10 +3,11 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { subscribeToGame, startGame, removePlayer, updateSettings, setReady } from '@/lib/gameService';
 import { Wordmark, Watermark8 } from '@/components/Wordmark';
-import type { CardLook, GameState, Player } from '@/lib/types';
+import type { CardLook, GameMode, GameState, Player } from '@/lib/types';
 
 const LOOKS: CardLook[] = ['solid', 'framed', 'glass'];
 const HAND_SIZES = [5, 8, 10];
+const MODES: GameMode[] = ['classic', 'quickfire'];
 
 function initials(name: string): string {
   return name.slice(0, 2).toUpperCase();
@@ -214,6 +215,7 @@ export default function LobbyPage() {
   const maxPlayers = game.maxPlayers ?? 8;
   const cardLook = game.cardLook ?? 'solid';
   const startingHand = game.startingHand ?? 8;
+  const gameMode = game.gameMode ?? 'classic';
   const playerList = game.playerOrder.map(id => game.players[id]).filter(Boolean);
   const canStart = isHost && playerList.length >= 2;
 
@@ -232,6 +234,21 @@ export default function LobbyPage() {
           disabled={!isHost}
           onChange={v => handleSetting({ maxPlayers: v })}
         />
+      </div>
+      <div>
+        <label className="field-label">GAME MODE</label>
+        <Seg
+          options={MODES}
+          value={gameMode}
+          disabled={!isHost}
+          onChange={v => handleSetting({ gameMode: v })}
+          format={v => (v === 'quickfire' ? '⚡ QUICK FIRE' : 'CLASSIC')}
+        />
+        {gameMode === 'quickfire' && (
+          <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
+            6 seconds to act on your turn — run out and you draw and the turn moves on.
+          </p>
+        )}
       </div>
       <div>
         <label className="field-label">CARD LOOK</label>
